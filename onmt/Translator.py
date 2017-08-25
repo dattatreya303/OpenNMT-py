@@ -75,7 +75,7 @@ class Translator(object):
         src = make_features(batch, self.fields)
 
         #  (1) run the encoder on the src
-        encStates, context = self.model.encoder(src, lengths=src_lengths)
+        encStates, context = self.model.encoder(src, lengths=src_lengths)        
         encStates = self.model.init_decoder_state(context, encStates)
 
         useMasking = (self._type == "text")
@@ -208,17 +208,49 @@ class Translator(object):
 
         return allHyp, allScores, allAttn, goldScores
 
-    def translate(self, batch, data):
+    def beamStates(self, batch, data, preds):
+        _, src_lengths = batch.src
+        src = make_features(batch, self.fields)
+
+        encStates, context = self.model.encoder(src, lengths=src_lengths)        
+        encStates = self.model.init_decoder_state(context, encStates)
+
+        #  This mask is applied to the attention model inside the decoder
+        #  so that the attention ignores source padding
+        padMask = None
+        pad = self.fields["src"].vocab.stoi[onmt.IO.PAD_WORD]
+        padMask = src[:, :, 0].data.eq(pad).t()
+
+        def mask(padMask):
+            self.model.decoder.attn.applyMask(padMask)
+
+        decAll = []
+        for p in preds[0]:
+            p = Variable(torch.LongTensor(p).unsqueeze(1))
+            decStates = encStates
+            mask(padMask.unsqueeze(0))
+            decOut, decStates, attn = self.model.decoder(p,
+                                                         src,
+                                                         context,
+                                                         decStates)
+            decAll.append(decOut.squeeze().data.numpy())
+        return context.squeeze().data.numpy(), decAll
+
+    def translate(self, batch, data, states=False):
         #  (1) convert words to indexes
         batchSize = batch.batch_size
 
         #  (2) translate
-        pred, predScore, attn, goldScore = self.translateBatch(batch, data)
+        pred, predScore, attn, goldScore = self.translateBatch(batch, 
+                                                               data)
         pred, predScore, attn, goldScore, i = list(zip(
             *sorted(zip(pred, predScore, attn, goldScore,
                         batch.indices.data),
                     key=lambda x: x[-1])))
         inds, perm = torch.sort(batch.indices.data)
+
+        if states:
+            context, decStates = self.beamStates(batch, data, pred)
 
         #  (3) convert indexes to words
         predBatch = []
@@ -230,5 +262,9 @@ class Translator(object):
                                         attn[b][n], src_vocab)
                  for n in range(self.opt.n_best)]
             )
+        if states:
+            return (predBatch, predScore, goldScore, 
+                    attn, src, context, decStates)
+        else:
+            return predBatch, predScore, goldScore, attn, src
 
-        return predBatch, predScore, goldScore, attn, src
