@@ -141,6 +141,8 @@ class ONMTDataset(torchtext.data.Dataset):
 
         if tgt_path is not None:
             tgt_truncate = 0 if opt is None else opt.tgt_seq_length_trunc
+            tgt_point = next(self._read_corpus_file(tgt_path, tgt_truncate))
+            self.ntgtfeatures = tgt_point[2]
             tgt_data = self._read_corpus_file(tgt_path, tgt_truncate)
             # assert len(src_data) == len(tgt_data), \
             #     "Len src and tgt do not match"
@@ -255,7 +257,8 @@ class ONMTDataset(torchtext.data.Dataset):
     def load_fields(vocab):
         vocab = dict(vocab)
         fields = ONMTDataset.get_fields(
-            len(ONMTDataset.collect_features(vocab)))
+            len(ONMTDataset.collect_features(vocab)),
+            len(ONMTDataset.collect_features(vocab, side="tgt")))
         for k, v in vocab.items():
             # Hack. Can't pickle defaultdict :(
             v.stoi = defaultdict(lambda: 0, v.stoi)
@@ -283,17 +286,20 @@ class ONMTDataset(torchtext.data.Dataset):
         return feats
 
     @staticmethod
-    def collect_feature_dicts(fields):
+    def collect_feature_dicts(fields, side="src"):
+        assert side in ["src", "tgt"]
         feature_dicts = []
         for j in count():
-            key = "src_feat_" + str(j)
+            key = side + "_feat_" + str(j)
             if key not in fields:
                 break
             feature_dicts.append(fields[key].vocab)
         return feature_dicts
 
     @staticmethod
-    def get_fields(nFeatures=0):
+    def get_fields(nFeatures=0, nTgtFeatures=0):
+        print("nFeatures", nFeatures)
+        print("nTgtFeatures", nTgtFeatures)
         fields = {}
         fields["src"] = torchtext.data.Field(
             pad_token=PAD_WORD,
@@ -303,7 +309,11 @@ class ONMTDataset(torchtext.data.Dataset):
         #     include_lengths=True))]
 
         for j in range(nFeatures):
-            fields["src_feat_"+str(j)] = \
+            fields["src_feat_" + str(j)] = \
+                torchtext.data.Field(pad_token=PAD_WORD)
+
+        for j in range(nTgtFeatures):
+            fields["tgt_feat_" + str(j)] = \
                 torchtext.data.Field(pad_token=PAD_WORD)
 
         fields["tgt"] = torchtext.data.Field(
@@ -349,6 +359,8 @@ class ONMTDataset(torchtext.data.Dataset):
             fields["src_feat_" + str(j)].build_vocab(train)
         fields["tgt"].build_vocab(train, max_size=opt.tgt_vocab_size,
                                   min_freq=opt.tgt_words_min_frequency)
+        for j in range(train.ntgtfeatures):
+            fields["tgt_feat_" + str(j)].build_vocab(train)
 
         # Merge the input and output vocabularies.
         if opt.share_vocab:
