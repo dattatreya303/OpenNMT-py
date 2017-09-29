@@ -203,12 +203,13 @@ def load_fields(train, valid, checkpoint):
 
 
 def collect_features(train, fields):
-    # TODO: account for target features.
-    # Also, why does fields need to have the structure it does?
     src_features = onmt.IO.ONMTDataset.collect_features(fields)
     aeq(len(src_features), train.nfeatures)
 
-    return src_features
+    tgt_features = onmt.IO.ONMTDataset.collect_features(fields, side="tgt")
+    aeq(len(tgt_features), train.ntgtfeatures)
+
+    return src_features, tgt_features
 
 
 def build_model(model_opt, opt, fields, checkpoint):
@@ -268,9 +269,12 @@ def main():
     fields = load_fields(train, valid, checkpoint)
 
     # Collect features.
-    src_features = collect_features(train, fields)
+    src_features, tgt_features = collect_features(train, fields)
     for j, feat in enumerate(src_features):
         print(' * src feature %d size = %d' % (j, len(fields[feat].vocab)))
+    for j, feat in enumerate(tgt_features):
+        print(' * tgt feature %d size = %d' % (j, len(fields[feat].vocab)))
+    print(fields)
 
     # Build model.
     model = build_model(model_opt, opt, fields, checkpoint)

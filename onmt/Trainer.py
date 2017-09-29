@@ -107,6 +107,8 @@ class Trainer(object):
 
             src = onmt.IO.make_features(batch, 'src')
             tgt_outer = onmt.IO.make_features(batch, 'tgt')
+            # print("src", src)
+            # print("tgt", tgt_outer)
             report_stats.n_src_words += src_lengths.sum()
 
             for j in range(0, target_size-1, trunc_size):
