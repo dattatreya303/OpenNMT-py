@@ -139,15 +139,16 @@ def make_base_model(model_opt, fields, gpu, checkpoint=None):
     # Make decoder.
     tgt_dict = fields["tgt"].vocab
 
+    # TODO: prepare for a future where tgt features are possible.
+    feature_dicts = []
+    tgt_embeddings = make_embeddings(model_opt, tgt_dict,
+                                     feature_dicts, for_encoder=False)
+
+    print(src_embeddings.word_lut.weight)
+
+    # Share the embedding matrix - preprocess with share_vocab required
     if model_opt.share_embeddings:
-        tgt_embeddings = src_embeddings
-    else:
-        tgt_feature_dicts = ONMTDataset.collect_feature_dicts(fields,
-                                                              side="tgt")
-        if tgt_feature_dicts:
-            print("tgt feature dict", feature_dicts)
-        tgt_embeddings = make_embeddings(model_opt, tgt_dict,
-                                         tgt_feature_dicts, for_encoder=False)
+        tgt_embeddings.word_lut.weight = src_embeddings.word_lut.weight
     decoder = make_decoder(model_opt, tgt_embeddings)
 
     # Make NMTModel(= encoder + decoder).
