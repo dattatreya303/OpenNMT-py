@@ -125,6 +125,31 @@ def train_model(model, train_data, valid_data, fields, optim):
     train_iter = make_train_data_iter(train_data, opt)
     valid_iter = make_valid_data_iter(valid_data, opt)
 
+    # TODO: TEMP
+    # print("actual words in file")
+    # print(train_data.__dict__['examples'][0].__dict__['tgt_feat_0'])
+    # print(train_data.__dict__['examples'][0].__dict__['tgt'])
+    # print(train_data.__dict__['examples'][0].__dict__['src_feat_0'])
+    # print(train_data.__dict__['examples'][0].__dict__['src'])
+    # print("sizes in file")
+    # print(len(train_data.__dict__['examples'][0].__dict__['tgt_feat_0']))
+    # print(len(train_data.__dict__['examples'][0].__dict__['tgt']))
+    # print(len(train_data.__dict__['examples'][0].__dict__['src_feat_0']))
+    # print(len(train_data.__dict__['examples'][0].__dict__['src']))
+    # print("in train_iter example")
+    # first_ex = train_iter.data()[0]
+    # print(len(first_ex.__dict__['tgt_feat_0']))
+    # print(len(first_ex.__dict__['tgt']))
+    # print(len(first_ex.__dict__['src_feat_0']))
+    # print(len(first_ex.__dict__['src']))
+    # for batch in train_iter:
+    #     print("SIZES IN CURRENT BATCH")
+    #     print(batch.__dict__['tgt_feat_0'].size())
+    #     print(batch.__dict__['tgt'].size())
+    #     print(batch.__dict__['src_feat_0'].size())
+    #     print(batch.__dict__['src'][0].size())
+    #     break
+
     train_loss = make_loss_compute(model, fields["tgt"].vocab,
                                    train_data, opt)
     valid_loss = make_loss_compute(model, fields["tgt"].vocab,
@@ -274,7 +299,6 @@ def main():
         print(' * src feature %d size = %d' % (j, len(fields[feat].vocab)))
     for j, feat in enumerate(tgt_features):
         print(' * tgt feature %d size = %d' % (j, len(fields[feat].vocab)))
-    print(fields)
 
     # Build model.
     model = build_model(model_opt, opt, fields, checkpoint)

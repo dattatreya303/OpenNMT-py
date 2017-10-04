@@ -125,8 +125,8 @@ def make_base_model(model_opt, fields, gpu, checkpoint=None):
     if model_opt.model_type == "text":
         src_dict = fields["src"].vocab
         feature_dicts = ONMTDataset.collect_feature_dicts(fields)
-        if feature_dicts:
-          print("feature dict", feature_dicts)
+        # if feature_dicts:
+        #   print("feature dict", feature_dicts)
         src_embeddings = make_embeddings(model_opt, src_dict,
                                          feature_dicts)
         encoder = make_encoder(model_opt, src_embeddings)
@@ -139,11 +139,12 @@ def make_base_model(model_opt, fields, gpu, checkpoint=None):
     # Make decoder.
     tgt_dict = fields["tgt"].vocab
     # TODO: prepare for a future where tgt features are possible.
-    feature_dicts = []
-    tgt_embeddings = make_embeddings(model_opt, tgt_dict,
-                                     feature_dicts, for_encoder=False)
-
-    print(src_embeddings.word_lut.weight)
+    tgt_feature_dicts = ONMTDataset.collect_feature_dicts(fields,
+                                                          side="tgt")
+    tgt_embeddings = make_embeddings(model_opt,
+                                     tgt_dict,
+                                     tgt_feature_dicts,
+                                     for_encoder=False)
 
     # Share the embedding matrix - preprocess with share_vocab required
     if model_opt.share_embeddings:

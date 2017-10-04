@@ -96,7 +96,6 @@ class Trainer(object):
         """ Called for each epoch to train. """
         total_stats = Statistics()
         report_stats = Statistics()
-
         for i, batch in enumerate(self.train_iter):
             target_size = batch.tgt.size(0)
             # Truncated BPTT

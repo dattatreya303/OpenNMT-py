@@ -76,9 +76,7 @@ def make_features(batch, side):
     feat_start = side + "_feat_"
     features = sorted(batch.__dict__[k]
                       for k in batch.__dict__ if feat_start in k)
-    # print(side)
     levels = [data] + features
-    # print(levels)
     return torch.cat([level.unsqueeze(2) for level in levels], 2)
 
 
@@ -315,9 +313,10 @@ class ONMTDataset(torchtext.data.Dataset):
                 torchtext.data.Field(pad_token=PAD_WORD)
 
         for j in range(nTgtFeatures):
-            # TODO: Can we improve this?
             fields["tgt_feat_" + str(j)] = \
-                torchtext.data.Field(pad_token=PAD_WORD)
+                torchtext.data.Field(pad_token=PAD_WORD,
+                                     init_token=BOS_WORD,
+                                     eos_token=EOS_WORD)
 
         fields["tgt"] = torchtext.data.Field(
             init_token=BOS_WORD, eos_token=EOS_WORD,
@@ -331,7 +330,6 @@ class ONMTDataset(torchtext.data.Dataset):
                 for j, t in enumerate(sent):
                     alignment[j, i, t] = 1
             return alignment
-
         fields["src_map"] = torchtext.data.Field(
             use_vocab=False, tensor_type=torch.FloatTensor,
             postprocessing=make_src, sequential=False)
