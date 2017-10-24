@@ -10,6 +10,17 @@ def model_opts(parser):
     # Model options
     parser.add_argument('-model_type', default='text',
                         help="Type of encoder to use. Options are [text|img].")
+
+    # Ensemble options
+    parser.add_argument('-ensemble', action="store_true",
+                        help='Use ensemble instead of single model.')
+    parser.add_argument('-ensemble_share_embedding', action="store_true",
+                        help='Share embeddings between ensembled models.')
+    parser.add_argument('-ensemble_num', type=int, default=4,
+                        help='Number of models to ensemble.')
+    parser.add_argument('-mcl_k', type=int, default=1,
+                        help='Multiple Choice Learning top k.')
+
     # Embedding Options
     parser.add_argument('-word_vec_size', type=int, default=-1,
                         help='Word embedding for both.')

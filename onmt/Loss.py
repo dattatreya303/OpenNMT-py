@@ -132,6 +132,74 @@ class NMTLossCompute(LossComputeBase):
         return loss, stats
 
 
+class MCLLossCompute(LossComputeBase):
+    """
+    Implements loss for multiple choice loss as described
+    in https://arxiv.org/pdf/1511.06314.pdf
+    """
+    def __init__(self, generator, tgt_vocab, mcl_k, ensemble_num):
+        super(MCLLossCompute, self).__init__(generator, tgt_vocab)
+
+        self.ensemble_num = ensemble_num
+        self.k = mcl_k
+
+        weight = torch.ones(len(tgt_vocab))
+        weight[self.padding_idx] = 0
+        self.criterions = []
+        for ix in range(ensemble_num):
+            self.criterions.append(nn.NLLLoss(weight, size_average=False))
+
+    def make_shard_state(self, batch, output, range_, attns=None):
+        """ See base class for args description. """
+        return {
+            "output": output,
+            "target": batch.tgt[range_[0] + 1: range_[1]],
+        }
+
+    def compute_loss(self, batch, output, target):
+        # Only works with batch size 1 right now as in paper
+        # (Pytorch is missing functionality)
+        losses = []
+        all_stats = []
+
+        target = target.view(-1)
+        target_data = target.data.clone()
+
+        for ix in range(self.ensemble_num):
+            scores = self.generator.models[ix].generator(self.bottle(output[ix]))
+            scores_data = scores.data.clone()
+            loss_ix = self.criterions[ix](scores, target)
+            loss_ix_data = loss_ix.data.clone()
+
+            losses.append(loss_ix)
+            all_stats.append(self.stats(loss_ix_data, scores_data, target_data))
+        losses = torch.cat(losses)
+
+        topk, indices = torch.topk(losses, self.k)#, largest=False)
+        topk.data.fill_(1)
+
+        mask = torch.zeros(losses.size())
+        mask.scatter_(0, indices.data, 1.)
+        mask = Variable(mask)
+
+        loss = (losses * mask).sum()
+        loss.div(batch.batch_size).backward()
+
+        return loss_ix, all_stats, indices
+
+    def sharded_compute_loss(self, batch, output, attns,
+                             cur_trunc, trunc_size, shard_size):
+
+        # Not implemented as sharded!
+        range_ = (0, batch.tgt.size(0))
+        loss, stats, indices = self.compute_loss(batch,
+                                                 output,
+                                                 batch.tgt[range_[0] + 1: range_[1]])
+
+
+        return (stats, indices)
+
+
 def filter_shard_state(state):
     for k, v in state.items():
         if v is not None:

@@ -63,7 +63,8 @@ if opt.exp_host != "":
 
 
 def report_func(epoch, batch, num_batches,
-                start_time, lr, report_stats):
+                start_time, lr, report_stats,
+                model_ix=False):
     """
     This is the user-defined batch-level traing progress
     report function.
@@ -79,7 +80,8 @@ def report_func(epoch, batch, num_batches,
         report_stats(Statistics): updated Statistics instance.
     """
     if batch % opt.report_every == -1 % opt.report_every:
-        report_stats.output(epoch, batch+1, num_batches, start_time)
+        report_stats.output(epoch, batch+1, num_batches,
+                            start_time, model_ix)
         if opt.exp_host:
             report_stats.log("progress", experiment, lr)
         report_stats = onmt.Statistics()
@@ -113,13 +115,17 @@ def make_valid_data_iter(valid_data, opt):
                 train=False, sort=True)
 
 
-def make_loss_compute(model, tgt_vocab, dataset, opt):
+def make_loss_compute(model, tgt_vocab, dataset, opt, model_opt):
     """
     This returns user-defined LossCompute object, which is used to
     compute loss in train/validate process. You can implement your
     own *LossCompute class, by subclassing LossComputeBase.
     """
-    if opt.copy_attn:
+    if model_opt.ensemble:
+        compute = onmt.Loss.MCLLossCompute(model, tgt_vocab,
+                                           model_opt.mcl_k,
+                                           model_opt.ensemble_num)
+    elif opt.copy_attn:
         compute = onmt.modules.CopyGeneratorLossCompute(
             model.generator, tgt_vocab, dataset, opt.copy_attn_force)
     else:
@@ -131,22 +137,24 @@ def make_loss_compute(model, tgt_vocab, dataset, opt):
     return compute
 
 
-def train_model(model, train_data, valid_data, fields, optim):
+def train_model(model, train_data, valid_data, fields, optim, model_opt):
 
     train_iter = make_train_data_iter(train_data, opt)
     valid_iter = make_valid_data_iter(valid_data, opt)
 
     train_loss = make_loss_compute(model, fields["tgt"].vocab,
-                                   train_data, opt)
+                                   train_data, opt, model_opt)
     valid_loss = make_loss_compute(model, fields["tgt"].vocab,
-                                   valid_data, opt)
+                                   valid_data, opt, model_opt)
 
     trunc_size = opt.truncated_decoder  # Badly named...
     shard_size = opt.max_generator_batches
 
     trainer = onmt.Trainer(model, train_iter, valid_iter,
                            train_loss, valid_loss, optim,
-                           trunc_size, shard_size)
+                           trunc_size, shard_size,
+                           model_opt.ensemble,
+                           model_opt.ensemble_num)
 
     for epoch in range(opt.start_epoch, opt.epochs + 1):
         print('')
@@ -223,13 +231,29 @@ def collect_features(train, fields):
 
 
 def build_model(model_opt, opt, fields, checkpoint):
-    print('Building model...')
-    model = onmt.ModelConstructor.make_base_model(model_opt, fields,
-                                                  use_gpu(opt), checkpoint)
-    if len(opt.gpuid) > 1:
-        print('Multi gpu training: ', opt.gpuid)
-        model = nn.DataParallel(model, device_ids=opt.gpuid, dim=1)
-    print(model)
+    if model_opt.ensemble:
+        print("Building Ensemble...")
+        models = []
+        for i in range(model_opt.ensemble_num):
+            print("Building Model {}".format(i + 1))
+            models.append(onmt.ModelConstructor.make_base_model(model_opt,
+                                                                fields,
+                                                                use_gpu(opt),
+                                                                checkpoint))
+        model = onmt.Models.Ensemble(models)
+
+        if use_gpu(opt):
+            model.cuda()
+        else:
+            model.cpu()
+
+    else:
+        print('Building model...')
+        model = onmt.ModelConstructor.make_base_model(model_opt, fields,
+                                                      use_gpu(opt), checkpoint)
+        if len(opt.gpuid) > 1:
+            print('Multi gpu training: ', opt.gpuid)
+            model = nn.DataParallel(model, device_ids=opt.gpuid, dim=1)
 
     return model
 
@@ -285,6 +309,7 @@ def main():
 
     # Build model.
     model = build_model(model_opt, opt, fields, checkpoint)
+    print(model)
     tally_parameters(model)
     check_save_model_path()
 
@@ -292,7 +317,9 @@ def main():
     optim = build_optim(model, checkpoint)
 
     # Do training.
-    train_model(model, train, valid, fields, optim)
+    train_model(model, train,
+                valid, fields,
+                optim, model_opt=model_opt)
 
 
 if __name__ == "__main__":

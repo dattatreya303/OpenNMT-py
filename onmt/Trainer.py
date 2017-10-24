@@ -44,16 +44,26 @@ class Statistics(object):
     def elapsed_time(self):
         return time.time() - self.start_time
 
-    def output(self, epoch, batch, n_batches, start):
+    def output(self, epoch, batch, n_batches, start, ix=False):
         t = self.elapsed_time()
-        print(("Epoch %2d, %5d/%5d; acc: %6.2f; ppl: %6.2f; " +
-               "%3.0f src tok/s; %3.0f tgt tok/s; %6.0f s elapsed") %
-              (epoch, batch,  n_batches,
-               self.accuracy(),
-               self.ppl(),
-               self.n_src_words / (t + 1e-5),
-               self.n_words / (t + 1e-5),
-               time.time() - start))
+        if ix:
+            print(("M%2d Ep. %2d, %5d/%5d; acc: %6.2f; ppl: %6.2f; " +
+                   "%3.0f src tok/s; %3.0f tgt tok/s; %6.0f s elapsed") %
+                  (ix, epoch, batch, n_batches,
+                   self.accuracy(),
+                   self.ppl(),
+                   self.n_src_words / (t + 1e-5),
+                   self.n_words / (t + 1e-5),
+                   time.time() - start))
+        else:
+            print(("Epoch %2d, %5d/%5d; acc: %6.2f; ppl: %6.2f; " +
+                   "%3.0f src tok/s; %3.0f tgt tok/s; %6.0f s elapsed") %
+                  (epoch, batch,  n_batches,
+                   self.accuracy(),
+                   self.ppl(),
+                   self.n_src_words / (t + 1e-5),
+                   self.n_words / (t + 1e-5),
+                   time.time() - start))
         sys.stdout.flush()
 
     def log(self, prefix, experiment, lr):
@@ -67,7 +77,8 @@ class Statistics(object):
 class Trainer(object):
     def __init__(self, model, train_iter, valid_iter,
                  train_loss, valid_loss, optim,
-                 trunc_size, shard_size):
+                 trunc_size, shard_size,
+                 ensemble=False, ensemble_num=2):
         """
         Args:
             model: the seq2seq model.
@@ -89,13 +100,20 @@ class Trainer(object):
         self.trunc_size = trunc_size
         self.shard_size = shard_size
 
+        self.ensemble = ensemble
+        self.ensemble_num = ensemble_num
+
         # Set model in training mode.
         self.model.train()
 
     def train(self, epoch, report_func=None):
         """ Called for each epoch to train. """
-        total_stats = Statistics()
-        report_stats = Statistics()
+        if self.ensemble:
+            total_stats = [Statistics() for i in range(self.ensemble_num)]
+            report_stats = [Statistics() for i in range(self.ensemble_num)]
+        else:
+            total_stats = Statistics()
+            report_stats = Statistics()
 
         for i, batch in enumerate(self.train_iter):
             target_size = batch.tgt.size(0)
@@ -107,7 +125,11 @@ class Trainer(object):
 
             src = onmt.IO.make_features(batch, 'src')
             tgt_outer = onmt.IO.make_features(batch, 'tgt')
-            report_stats.n_src_words += src_lengths.sum()
+            if self.ensemble:
+                for r in report_stats:
+                    r.n_src_words += src_lengths.sum()
+            else:
+                report_stats.n_src_words += src_lengths.sum()
 
             for j in range(0, target_size-1, trunc_size):
                 # 1. Create truncated target.
@@ -125,17 +147,33 @@ class Trainer(object):
 
                 # 4. Update the parameters and statistics.
                 self.optim.step()
-                total_stats.update(batch_stats)
-                report_stats.update(batch_stats)
+                if self.ensemble:
+                    indices = batch_stats[1]
+                    # print("Best model:", indices.data[0])
+                    batch_stats = batch_stats[0]
+                    for ix, s in enumerate(batch_stats):
+                        total_stats[ix].update(s)
+                        report_stats[ix].update(s)
+                        if report_func is not None:
+                            report_stats[ix] = report_func(
+                                    epoch, i, len(self.train_iter),
+                                    total_stats[0].start_time, self.optim.lr,
+                                    report_stats[ix], ix+1)
+                else:
+                    total_stats.update(batch_stats)
+                    report_stats.update(batch_stats)
+                    if report_func is not None:
+                        report_stats = report_func(
+                                epoch, i, len(self.train_iter),
+                                total_stats.start_time, self.optim.lr,
+                                report_stats)
 
                 # If truncated, don't backprop fully.
                 if dec_state is not None:
-                    dec_state.detach()
+                    for d in dec_state:
+                        d.detach()
 
-            if report_func is not None:
-                report_stats = report_func(
-                        epoch, i, len(self.train_iter),
-                        total_stats.start_time, self.optim.lr, report_stats)
+
 
         return total_stats
 

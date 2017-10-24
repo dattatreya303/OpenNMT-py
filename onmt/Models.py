@@ -426,6 +426,31 @@ class NMTModel(nn.Module):
         return out, attns, dec_state
 
 
+class Ensemble(nn.Module):
+    """
+    A wrapper around an emsemble of several models
+    """
+    def __init__(self, models):
+        super(Ensemble, self).__init__()
+        self.models = nn.ModuleList(models)
+
+    def forward(self, src, tgt, lengths, dec_states=None):
+        outs = []
+        attns = []
+        new_dec_states = []
+        for ix, m in enumerate(self.models):
+            out, attn, dec_state = m.forward(src,
+                                             tgt,
+                                             lengths,
+                                             None if dec_states is None
+                                             else dec_states[ix])
+            outs.append(out)
+            attns.append(attn)
+            new_dec_states.append(dec_state)
+
+        return outs, attns, new_dec_states
+
+
 class DecoderState(object):
     """
     DecoderState is a base class for models, used during translation
