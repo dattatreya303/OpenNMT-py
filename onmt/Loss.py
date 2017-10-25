@@ -171,7 +171,7 @@ class MCLLossCompute(LossComputeBase):
         topk, indices = torch.topk(losses, self.k, dim=1, largest=False)
         topk.data.fill_(1)
 
-        mask = torch.zeros(losses.size())
+        mask = torch.zeros(losses.size()).cuda()
         mask.scatter_(1, indices.data, 1.)
         mask = Variable(mask)
         loss = (losses * mask).sum()
