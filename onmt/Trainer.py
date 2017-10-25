@@ -80,7 +80,8 @@ class Trainer(object):
     def __init__(self, model, train_iter, valid_iter,
                  train_loss, valid_loss, optim,
                  trunc_size, shard_size,
-                 ensemble=False, ensemble_num=2):
+                 ensemble=False, ensemble_num=2,
+                 pretrain_for=2):
         """
         Args:
             model: the seq2seq model.
@@ -104,6 +105,7 @@ class Trainer(object):
 
         self.ensemble = ensemble
         self.ensemble_num = ensemble_num
+        self.pretrain_for = pretrain_for
 
         # Set model in training mode.
         self.model.train()
@@ -113,6 +115,8 @@ class Trainer(object):
         if self.ensemble:
             total_stats = [Statistics() for i in range(self.ensemble_num)]
             report_stats = [Statistics() for i in range(self.ensemble_num)]
+            if epoch > self.pretrain_for:
+                self.train_loss.use_mask = False
         else:
             total_stats = Statistics()
             report_stats = Statistics()

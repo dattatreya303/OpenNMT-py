@@ -143,6 +143,8 @@ class MCLLossCompute(LossComputeBase):
         self.ensemble_num = ensemble_num
         self.k = mcl_k
 
+        self.use_mask = False
+
     def make_shard_state(self, batch, output, range_, attns=None):
         """ See base class for args description. """
         return {
@@ -170,11 +172,12 @@ class MCLLossCompute(LossComputeBase):
         losses = torch.cat(losses, 1)
         topk, indices = torch.topk(losses, self.k, dim=1, largest=False)
         topk.data.fill_(1)
-
-        mask = torch.zeros(losses.size())
-        mask.scatter_(1, indices.data, 1.)
-        mask = Variable(mask)
-        loss = (losses * mask).sum()
+        if self.use_mask:
+            mask = torch.zeros(losses.size())
+            mask.scatter_(1, indices.data, 1.)
+            mask = Variable(mask)
+            losses = losses * mask
+        loss = losses.sum()
         loss.div(batch.batch_size).backward()
 
         return logpy, all_stats, indices
@@ -187,8 +190,6 @@ class MCLLossCompute(LossComputeBase):
         loss, stats, indices = self.compute_loss(batch,
                                                  output,
                                                  batch.tgt[range_[0] + 1: range_[1]])
-
-
         return (stats, indices)
 
 
