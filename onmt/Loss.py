@@ -194,6 +194,33 @@ class MCLLossCompute(LossComputeBase):
         return (stats, indices)
 
 
+    def monolithic_compute_loss(self, batch, output, attns):
+        range_ = (0, batch.tgt.size(0))
+        y = batch.tgt[range_[0] + 1: range_[1]]
+
+        losses = []
+        all_stats = []
+        y = y.view(-1)
+        y_data = y.data.clone()
+
+        for ix in range(self.ensemble_num):
+            logp = self.generator.models[ix].generator(self.bottle(output[ix]))
+            logp_data = logp.data.clone()
+            logpy = -1*torch.gather(logp, 1, y.unsqueeze(1))
+            pad_mask = y.ne(self.padding_idx).float().unsqueeze(1)
+            logpy = pad_mask * logpy
+            # Make loss over sequence
+            logpy = logpy.view(-1, batch.batch_size)
+            logpy = logpy.sum(0).squeeze().unsqueeze(1)
+            losses.append(logpy)
+            all_stats.append(self.stats(torch.sum(logpy).data.clone(), logp_data, y_data))
+
+        return all_stats
+
+
+
+
+
 def filter_shard_state(state):
     for k, v in state.items():
         if v is not None:

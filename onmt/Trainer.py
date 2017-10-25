@@ -181,17 +181,18 @@ class Trainer(object):
                             d.detach()
                     else:
                         dec_state.detach()
-
-
-
+            # if i > 2:
+            #     break
         return total_stats
 
     def validate(self):
         """ Called for each epoch to validate. """
         # Set model in validating mode.
         self.model.eval()
-
-        stats = Statistics()
+        if self.ensemble:
+            stats = [Statistics() for i in range(self.ensemble_num)]
+        else:
+            stats = Statistics()
 
         for batch in self.valid_iter:
             _, src_lengths = batch.src
@@ -206,7 +207,10 @@ class Trainer(object):
                     batch, outputs, attns)
 
             # Update statistics.
-            stats.update(batch_stats)
+            for ix, s in enumerate(batch_stats):
+                stats[ix].update(s)
+
+            # break
 
         # Set model back to training mode.
         self.model.train()
@@ -222,23 +226,21 @@ class Trainer(object):
         real_model = (self.model.module
                       if isinstance(self.model, nn.DataParallel)
                       else self.model)
-        real_generator = (real_model.generator.module
-                          if isinstance(real_model.generator, nn.DataParallel)
-                          else real_model.generator)
 
         model_state_dict = real_model.state_dict()
-        model_state_dict = {k: v for k, v in model_state_dict.items()
-                            if 'generator' not in k}
-        generator_state_dict = real_generator.state_dict()
+        model_state_dict = {k: v for k, v in model_state_dict.items()}
         checkpoint = {
             'model': model_state_dict,
-            'generator': generator_state_dict,
             'vocab': onmt.IO.ONMTDataset.save_vocab(fields),
             'opt': opt,
             'epoch': epoch,
             'optim': self.optim
         }
+        if self.ensemble:
+            valid_ppl = "_".join(["%.2f" % s.ppl() for s in valid_stats])
+        else:
+            valid_ppl = "%.2f" % valid_stats.ppl()
         torch.save(checkpoint,
-                   '%s_acc_%.2f_ppl_%.2f_e%d.pt'
+                   '%s_acc_%.2f_ppl_%s_e%d.pt'
                    % (opt.save_model, valid_stats.accuracy(),
-                      valid_stats.ppl(), epoch))
+                      valid_ppl, epoch))

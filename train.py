@@ -1,5 +1,6 @@
 from __future__ import division
 
+import numpy as np
 import os
 import sys
 import argparse
@@ -172,16 +173,22 @@ def train_model(model, train_data, valid_data, fields, optim, model_opt):
 
         # 2. Validate on the validation set.
         valid_stats = trainer.validate()
-        print('Validation perplexity: %g' % valid_stats.ppl())
-        print('Validation accuracy: %g' % valid_stats.accuracy())
+        if model_opt.ensemble:
+            for ix, s in enumerate(valid_stats):
+                print('M %d Validation perplexity: %g' % (ix+1, s.ppl()))
+                print('M %d Validation accuracy: %g' % (ix+1, s.accuracy()))
+        else:
+            print('Validation perplexity: %g' % valid_stats.ppl())
+            print('Validation accuracy: %g' % valid_stats.accuracy())
 
         # 3. Log to remote server.
-        if opt.exp_host:
-            train_stats.log("train", experiment, optim.lr)
-            valid_stats.log("valid", experiment, optim.lr)
+        # if opt.exp_host:
+        #     train_stats.log("train", experiment, optim.lr)
+        #     valid_stats.log("valid", experiment, optim.lr)
 
         # 4. Update the learning rate
-        trainer.epoch_step(valid_stats.ppl(), epoch)
+        mean_ppl = np.mean([s.ppl() for s in valid_stats])
+        trainer.epoch_step(mean_ppl, epoch)
 
         # 5. Drop a checkpoint if needed.
         if epoch >= opt.start_checkpoint_at:
