@@ -20,6 +20,8 @@ def model_opts(parser):
                         help='Number of models to ensemble.')
     parser.add_argument('-mcl_k', type=int, default=1,
                         help='Multiple Choice Learning top k.')
+    parser.add_argument('-pretrain_for', type=int, default=2,
+                        help='Number of epochs without MLC loss.')
 
     # Embedding Options
     parser.add_argument('-word_vec_size', type=int, default=-1,

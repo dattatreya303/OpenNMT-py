@@ -154,7 +154,8 @@ def train_model(model, train_data, valid_data, fields, optim, model_opt):
                            train_loss, valid_loss, optim,
                            trunc_size, shard_size,
                            model_opt.ensemble,
-                           model_opt.ensemble_num)
+                           model_opt.ensemble_num,
+                           model_opt.pretrain_for)
 
     for epoch in range(opt.start_epoch, opt.epochs + 1):
         print('')
