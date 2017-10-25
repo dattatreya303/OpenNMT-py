@@ -238,9 +238,11 @@ class Trainer(object):
         }
         if self.ensemble:
             valid_ppl = "_".join(["%.2f" % s.ppl() for s in valid_stats])
+            valid_acc = "_".join(["%.2f" % s.accuracy() for s in valid_stats])
         else:
             valid_ppl = "%.2f" % valid_stats.ppl()
+            valid_acc = "%.2f" % valid_stats.accuracy()
         torch.save(checkpoint,
-                   '%s_acc_%.2f_ppl_%s_e%d.pt'
-                   % (opt.save_model, valid_stats.accuracy(),
+                   '%s_acc_%s_ppl_%s_e%d.pt'
+                   % (opt.save_model, valid_acc,
                       valid_ppl, epoch))
