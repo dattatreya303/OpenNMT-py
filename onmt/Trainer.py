@@ -39,6 +39,8 @@ class Statistics(object):
         return 100 * (self.n_correct / self.n_words)
 
     def ppl(self):
+        # print(self.loss)
+        # print(self.n_words)
         return math.exp(min(self.loss / self.n_words, 100))
 
     def elapsed_time(self):
@@ -170,8 +172,11 @@ class Trainer(object):
 
                 # If truncated, don't backprop fully.
                 if dec_state is not None:
-                    for d in dec_state:
-                        d.detach()
+                    if self.ensemble:
+                        for d in dec_state:
+                            d.detach()
+                    else:
+                        dec_state.detach()
 
 
 

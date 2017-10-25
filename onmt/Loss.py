@@ -89,6 +89,7 @@ class LossComputeBase(nn.Module):
         num_correct = pred.eq(target) \
                           .masked_select(non_padding) \
                           .sum()
+        # print(loss[0])
         return onmt.Statistics(loss[0], non_padding.sum(), num_correct)
 
     def bottle(self, v):
@@ -126,7 +127,6 @@ class NMTLossCompute(LossComputeBase):
 
         loss = self.criterion(scores, target)
         loss_data = loss.data.clone()
-
         stats = self.stats(loss_data, scores_data, target_data)
 
         return loss, stats
@@ -143,12 +143,6 @@ class MCLLossCompute(LossComputeBase):
         self.ensemble_num = ensemble_num
         self.k = mcl_k
 
-        weight = torch.ones(len(tgt_vocab))
-        weight[self.padding_idx] = 0
-        self.criterions = []
-        for ix in range(ensemble_num):
-            self.criterions.append(nn.NLLLoss(weight, size_average=False))
-
     def make_shard_state(self, batch, output, range_, attns=None):
         """ See base class for args description. """
         return {
@@ -156,36 +150,34 @@ class MCLLossCompute(LossComputeBase):
             "target": batch.tgt[range_[0] + 1: range_[1]],
         }
 
-    def compute_loss(self, batch, output, target):
-        # Only works with batch size 1 right now as in paper
-        # (Pytorch is missing functionality)
+    def compute_loss(self, batch, output, y):
         losses = []
         all_stats = []
-
-        target = target.view(-1)
-        target_data = target.data.clone()
+        y = y.view(-1)
+        y_data = y.data.clone()
 
         for ix in range(self.ensemble_num):
-            scores = self.generator.models[ix].generator(self.bottle(output[ix]))
-            scores_data = scores.data.clone()
-            loss_ix = self.criterions[ix](scores, target)
-            loss_ix_data = loss_ix.data.clone()
-
-            losses.append(loss_ix)
-            all_stats.append(self.stats(loss_ix_data, scores_data, target_data))
-        losses = torch.cat(losses)
-
-        topk, indices = torch.topk(losses, self.k)#, largest=False)
+            logp = self.generator.models[ix].generator(self.bottle(output[ix]))
+            logp_data = logp.data.clone()
+            logpy = -1*torch.gather(logp, 1, y.unsqueeze(1))
+            pad_mask = y.ne(self.padding_idx).float().unsqueeze(1)
+            logpy = pad_mask * logpy
+            # Make loss over sequence
+            logpy = logpy.view(-1, batch.batch_size)
+            logpy = logpy.sum(0).squeeze().unsqueeze(1)
+            losses.append(logpy)
+            all_stats.append(self.stats(torch.sum(logpy).data.clone(), logp_data, y_data))
+        losses = torch.cat(losses, 1)
+        topk, indices = torch.topk(losses, self.k, dim=1, largest=False)
         topk.data.fill_(1)
 
         mask = torch.zeros(losses.size())
-        mask.scatter_(0, indices.data, 1.)
+        mask.scatter_(1, indices.data, 1.)
         mask = Variable(mask)
-
         loss = (losses * mask).sum()
         loss.div(batch.batch_size).backward()
 
-        return loss_ix, all_stats, indices
+        return logpy, all_stats, indices
 
     def sharded_compute_loss(self, batch, output, attns,
                              cur_trunc, trunc_size, shard_size):
