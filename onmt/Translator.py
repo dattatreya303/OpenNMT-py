@@ -24,11 +24,33 @@ class Translator(object):
 
         self._type = model_opt.encoder_type
         self.copy_attn = model_opt.copy_attn
+        if model_opt.ensemble:
+            print("Building Ensemble...")
+            models = []
+            for i in range(model_opt.ensemble_num):
+                print("Building Model {}".format(i + 1))
+                models.append(onmt.ModelConstructor
+                                  .make_base_model(model_opt,
+                                                   self.fields,
+                                                   use_gpu(opt),
+                                                   checkpoint=None))
+            self.model = onmt.Models.Ensemble(models)
+            self.model.load_state_dict(checkpoint['model'])
 
-        self.model = onmt.ModelConstructor.make_base_model(
-                            model_opt, self.fields, use_gpu(opt), checkpoint)
+            # Fix use only one model
+            if opt.ensemble_fixed_idx > -1:
+                print("USE ONLY MODEL {}".format(opt.ensemble_fixed_idx))
+                self.model = self.model.models[opt.ensemble_fixed_idx]
+
+            if use_gpu(opt):
+                self.model.cuda()
+            else:
+                self.model.cpu()
+        else:
+            self.model = onmt.ModelConstructor.make_base_model(
+                                model_opt, self.fields, use_gpu(opt), checkpoint)
+            self.model.generator.eval()
         self.model.eval()
-        self.model.generator.eval()
 
         # for debugging
         self.beam_accum = None
