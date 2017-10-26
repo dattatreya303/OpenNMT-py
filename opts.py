@@ -282,6 +282,9 @@ def translate_opts(parser):
     parser.add_argument('-share_vocab', action='store_true',
                         help="Share source and target vocabulary")
 
+    parser.add_argument('-ensemble_fixed_idx', type=int, default=-1,
+                        help="Fix model within example")
+
 
 def add_md_help_argument(parser):
     parser.add_argument('-md', action=MarkdownHelpAction,
