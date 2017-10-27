@@ -255,9 +255,9 @@ class Translator(object):
                     attn = cattn
                     goldScore = cgoldScore
                     predScore = cps
+                    current_best = cps[0][0]
         else:
             pred, predScore, attn, goldScore = self.translateBatch(batch, data)
-            print(pred, predScore, attn, goldScore)
         assert(len(goldScore) == len(pred))
         pred, predScore, attn, goldScore, i = list(zip(
             *sorted(zip(pred, predScore, attn, goldScore,
