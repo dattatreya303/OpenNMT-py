@@ -253,6 +253,8 @@ def build_model(model_opt, opt, fields, checkpoint):
                                                                 fields,
                                                                 use_gpu(opt),
                                                                 checkpoint))
+            if model_opt.ensemble_share_embedding and i > 0:
+                models[i].encoder.embeddings.word_lut.weight = models[0].encoder.embeddings.word_lut.weight
         model = onmt.Models.Ensemble(models)
 
         if use_gpu(opt):
