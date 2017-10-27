@@ -24,7 +24,9 @@ class Translator(object):
 
         self._type = model_opt.encoder_type
         self.copy_attn = model_opt.copy_attn
-        if model_opt.ensemble:
+        self.ensemble = model_opt.ensemble
+        self.fix_id = opt.ensemble_fixed_idx
+        if self.ensemble:
             print("Building Ensemble...")
             models = []
             for i in range(model_opt.ensemble_num):
@@ -38,9 +40,9 @@ class Translator(object):
             self.model.load_state_dict(checkpoint['model'])
 
             # Fix use only one model
-            if opt.ensemble_fixed_idx > -1:
-                print("USE ONLY MODEL {}".format(opt.ensemble_fixed_idx))
-                self.model = self.model.models[opt.ensemble_fixed_idx]
+            if self.fix_id > -1:
+                print("USE ONLY MODEL {}".format(self.fix_id))
+                self.model = self.model.models[self.fix_id]
 
             if use_gpu(opt):
                 self.model.cuda()
@@ -109,16 +111,21 @@ class Translator(object):
             goldScores += scores
         return goldScores
 
-    def translateBatch(self, batch, dataset):
+    def translateBatch(self, batch, dataset, ensid=-1):
         beam_size = self.opt.beam_size
         batch_size = batch.batch_size
 
         # (1) Run the encoder on the src.
         _, src_lengths = batch.src
         src = onmt.IO.make_features(batch, 'src')
-        encStates, context = self.model.encoder(src, src_lengths)
-        decStates = self.model.decoder.init_decoder_state(
-                                        src, context, encStates)
+        if ensid == -1:
+            encStates, context = self.model.encoder(src, src_lengths)
+            decStates = self.model.decoder.init_decoder_state(
+                                            src, context, encStates)
+        else:
+            encStates, context = self.model.models[ensid].encoder(src, src_lengths)
+            decStates = self.model.models[ensid].decoder.init_decoder_state(
+                                            src, context, encStates)
 
         #  (1b) Initialize for the decoder.
         def var(a): return Variable(a, volatile=True)
@@ -167,18 +174,31 @@ class Translator(object):
             inp = inp.unsqueeze(2)
 
             # Run one step.
-            decOut, decStates, attn = \
-                self.model.decoder(inp, context, decStates)
+            if ensid == -1:
+                decOut, decStates, attn = \
+                    self.model.decoder(inp, context, decStates)
+            else:
+                decOut, decStates, attn = \
+                    self.model.models[ensid].decoder(inp, context, decStates)
+
             decOut = decOut.squeeze(0)
             # decOut: beam x rnn_size
 
             # (b) Compute a vector of batch*beam word scores.
             if not self.copy_attn:
-                out = self.model.generator.forward(decOut).data
+                if ensid == -1:
+                    out = self.model.generator.forward(decOut).data
+                else:
+                    out = self.model.models[ensid].generator.forward(decOut).data
                 out = unbottle(out)
                 # beam x tgt_vocab
             else:
-                out = self.model.generator.forward(decOut,
+                if ensid == -1:
+                    out = self.model.generator.forward(decOut,
+                                                       attn["copy"].squeeze(0),
+                                                       srcMap)
+                else:
+                    out = self.model.models[ensid].generator.forward(decOut,
                                                    attn["copy"].squeeze(0),
                                                    srcMap)
                 # beam x (tgt_vocab + extra_vocab)
@@ -219,7 +239,25 @@ class Translator(object):
         batch_size = batch.batch_size
 
         #  (2) translate
-        pred, predScore, attn, goldScore = self.translateBatch(batch, data)
+        if self.fix_id == -1 and self.ensemble:
+            pred = None
+            predScore = None
+            attn = None
+            goldScore = None
+            current_best = -float("inf")
+
+            for ix in range(len(self.model.models)):
+                cpred, cps, cattn, cgoldScore = self.translateBatch(batch,
+                                                                    data,
+                                                                    ix)
+                if cps[0][0] > current_best:
+                    pred = cpred
+                    attn = cattn
+                    goldScore = cgoldScore
+                    predScore = cps
+        else:
+            pred, predScore, attn, goldScore = self.translateBatch(batch, data)
+            print(pred, predScore, attn, goldScore)
         assert(len(goldScore) == len(pred))
         pred, predScore, attn, goldScore, i = list(zip(
             *sorted(zip(pred, predScore, attn, goldScore,
