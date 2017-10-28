@@ -22,6 +22,8 @@ def model_opts(parser):
                         help='Multiple Choice Learning top k.')
     parser.add_argument('-pretrain_for', type=int, default=2,
                         help='Number of epochs without MLC loss.')
+    parser.add_argument('-teacher_model', action="store_true",
+                        help='Always update the first model.')
 
     # Embedding Options
     parser.add_argument('-word_vec_size', type=int, default=-1,

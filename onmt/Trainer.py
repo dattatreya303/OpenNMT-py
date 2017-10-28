@@ -116,7 +116,7 @@ class Trainer(object):
             total_stats = [Statistics() for i in range(self.ensemble_num)]
             report_stats = [Statistics() for i in range(self.ensemble_num)]
             if epoch > self.pretrain_for:
-                self.train_loss.use_mask = False
+                self.train_loss.use_mask = True
         else:
             total_stats = Statistics()
             report_stats = Statistics()
