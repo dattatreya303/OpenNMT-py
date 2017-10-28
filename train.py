@@ -125,7 +125,8 @@ def make_loss_compute(model, tgt_vocab, dataset, opt, model_opt):
     if model_opt.ensemble:
         compute = onmt.Loss.MCLLossCompute(model, tgt_vocab,
                                            model_opt.mcl_k,
-                                           model_opt.ensemble_num)
+                                           model_opt.ensemble_num,
+                                           model_opt.teacher_model)
     elif opt.copy_attn:
         compute = onmt.modules.CopyGeneratorLossCompute(
             model.generator, tgt_vocab, dataset, opt.copy_attn_force)

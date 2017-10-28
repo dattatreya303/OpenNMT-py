@@ -137,13 +137,16 @@ class MCLLossCompute(LossComputeBase):
     Implements loss for multiple choice loss as described
     in https://arxiv.org/pdf/1511.06314.pdf
     """
-    def __init__(self, generator, tgt_vocab, mcl_k, ensemble_num):
+    def __init__(self, generator,
+                 tgt_vocab, mcl_k,
+                 ensemble_num, teacher_model):
         super(MCLLossCompute, self).__init__(generator, tgt_vocab)
 
         self.ensemble_num = ensemble_num
         self.k = mcl_k
 
         self.use_mask = False
+        self.teacher_model = teacher_model
 
     def make_shard_state(self, batch, output, range_, attns=None):
         """ See base class for args description. """
@@ -161,20 +164,25 @@ class MCLLossCompute(LossComputeBase):
         for ix in range(self.ensemble_num):
             logp = self.generator.models[ix].generator(self.bottle(output[ix]))
             logp_data = logp.data.clone()
-            logpy = -1*torch.gather(logp, 1, y.unsqueeze(1))
+            logpy = -1 * torch.gather(logp, 1, y.unsqueeze(1))
             pad_mask = y.ne(self.padding_idx).float().unsqueeze(1)
             logpy = pad_mask * logpy
             # Make loss over sequence
             logpy = logpy.view(-1, batch.batch_size)
             logpy = logpy.sum(0).squeeze().unsqueeze(1)
             losses.append(logpy)
-            all_stats.append(self.stats(torch.sum(logpy).data.clone(), logp_data, y_data))
+            all_stats.append(self.stats(torch.sum(logpy).data.clone(),
+                             logp_data, y_data))
         losses = torch.cat(losses, 1)
         topk, indices = torch.topk(losses, self.k, dim=1, largest=False)
         topk.data.fill_(1)
         if self.use_mask:
             mask = torch.zeros(losses.size())
             mask.scatter_(1, indices.data, 1.)
+            print(mask)
+            if self.teacher_model:
+                mask[:, 0].fill_(1)
+            print(mask)
             mask = Variable(mask)
             losses = losses * mask
         loss = losses.sum()
