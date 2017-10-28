@@ -181,8 +181,6 @@ class Trainer(object):
                             d.detach()
                     else:
                         dec_state.detach()
-            if i > 2:
-                break
         return total_stats
 
     def validate(self):
@@ -209,8 +207,6 @@ class Trainer(object):
             # Update statistics.
             for ix, s in enumerate(batch_stats):
                 stats[ix].update(s)
-
-            break
 
         # Set model back to training mode.
         self.model.train()
