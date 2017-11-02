@@ -175,15 +175,15 @@ class MCLLossCompute(LossComputeBase):
                              logp_data, y_data))
         losses = torch.cat(losses, 1)
         topk, indices = torch.topk(losses, self.k, dim=1, largest=False)
-        topk.data.fill_(1)
+        #topk.data.fill_(1)
 
         if self.use_mask:
             mask = torch.zeros(losses.size()).cuda()
+            #upweight = torch.ones(losses.size()).cuda()
             mask.scatter_(1, indices.data, 1.)
-            print(mask)
             if self.teacher_model:
                 mask[:, 0].fill_(1)
-            print(mask)
+            #mask = upweight + 0.1 * mask
             mask = Variable(mask)
             losses = losses * mask
         loss = losses.sum()

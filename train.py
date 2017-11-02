@@ -188,7 +188,10 @@ def train_model(model, train_data, valid_data, fields, optim, model_opt):
         #     valid_stats.log("valid", experiment, optim.lr)
 
         # 4. Update the learning rate
-        mean_ppl = np.mean([s.ppl() for s in valid_stats])
+        if model_opt.ensemble:
+            mean_ppl = np.mean([s.ppl() for s in valid_stats])
+        else:
+            mean_ppl = valid_stats.ppl()
         trainer.epoch_step(mean_ppl, epoch)
 
         # 5. Drop a checkpoint if needed.

@@ -160,12 +160,11 @@ def make_base_model(model_opt, fields, gpu, checkpoint=None):
     else:
         generator = CopyGenerator(model_opt, fields["src"].vocab,
                                   fields["tgt"].vocab)
-
+    model.generator = generator
     # Load the model states from checkpoint or initialize them.
     if checkpoint is not None:
         print('Loading model parameters.')
         model.load_state_dict(checkpoint['model'])
-        generator.load_state_dict(checkpoint['generator'])
     else:
         if model_opt.param_init != 0.0:
             print('Intializing model parameters.')
@@ -179,7 +178,6 @@ def make_base_model(model_opt, fields, gpu, checkpoint=None):
                 model_opt.pre_word_vecs_dec, model_opt.fix_word_vecs_dec)
 
     # Add generator to model (this registers it as parameter of model).
-    model.generator = generator
 
     # Make the whole model leverage GPU if indicated to do so.
     if gpu:

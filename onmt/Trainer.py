@@ -205,8 +205,11 @@ class Trainer(object):
                     batch, outputs, attns)
 
             # Update statistics.
-            for ix, s in enumerate(batch_stats):
-                stats[ix].update(s)
+            if self.ensemble:
+                for ix, s in enumerate(batch_stats):
+                    stats[ix].update(s)
+            else:
+                stats.update(batch_stats)
 
         # Set model back to training mode.
         self.model.train()
