@@ -226,9 +226,6 @@ class MCLLossCompute(LossComputeBase):
         return all_stats
 
 
-
-
-
 def filter_shard_state(state):
     for k, v in state.items():
         if v is not None:
