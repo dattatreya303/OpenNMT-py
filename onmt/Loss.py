@@ -179,10 +179,8 @@ class MCLLossCompute(LossComputeBase):
         if self.use_mask:
             mask = torch.zeros(losses.size())
             mask.scatter_(1, indices.data, 1.)
-            print(mask)
             if self.teacher_model:
                 mask[:, 0].fill_(1)
-            print(mask)
             mask = Variable(mask)
             losses = losses * mask
         loss = losses.sum()
@@ -223,9 +221,6 @@ class MCLLossCompute(LossComputeBase):
             all_stats.append(self.stats(torch.sum(logpy).data.clone(), logp_data, y_data))
 
         return all_stats
-
-
-
 
 
 def filter_shard_state(state):

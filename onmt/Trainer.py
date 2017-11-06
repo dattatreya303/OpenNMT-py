@@ -12,6 +12,7 @@ users of this library) for the strategy things we do.
 import time
 import sys
 import math
+import numpy as np
 import torch
 import torch.nn as nn
 
@@ -115,6 +116,9 @@ class Trainer(object):
         if self.ensemble:
             total_stats = [Statistics() for i in range(self.ensemble_num)]
             report_stats = [Statistics() for i in range(self.ensemble_num)]
+            self.total_counts = {i: 0 for i in range(self.ensemble_num)}
+            if epoch == self.pretrain_for + 1:
+                print("STARTING MCL LOSS...")
             if epoch > self.pretrain_for:
                 self.train_loss.use_mask = True
         else:
@@ -155,7 +159,8 @@ class Trainer(object):
                 self.optim.step()
                 if self.ensemble:
                     indices = batch_stats[1]
-                    # print("Best model:", indices.data[0])
+                    for ix in range(self.ensemble_num):
+                        self.total_counts[ix] += indices.eq(ix).sum().data[0]
                     batch_stats = batch_stats[0]
                     for ix, s in enumerate(batch_stats):
                         total_stats[ix].update(s)
@@ -181,8 +186,8 @@ class Trainer(object):
                             d.detach()
                     else:
                         dec_state.detach()
-            if i > 2:
-                break
+            # if i > 20:
+            #     break
         return total_stats
 
     def validate(self):
@@ -210,7 +215,7 @@ class Trainer(object):
             for ix, s in enumerate(batch_stats):
                 stats[ix].update(s)
 
-            break
+            # break
 
         # Set model back to training mode.
         self.model.train()

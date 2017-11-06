@@ -122,7 +122,16 @@ def make_loss_compute(model, tgt_vocab, dataset, opt, model_opt):
     compute loss in train/validate process. You can implement your
     own *LossCompute class, by subclassing LossComputeBase.
     """
-    if model_opt.ensemble:
+    if model_opt.ensemble and opt.copy_attn:
+        compute = onmt.modules.MCLCopyGeneratorLossCompute(
+            model,
+            tgt_vocab,
+            dataset,
+            opt.copy_attn_force,
+            model_opt.mcl_k,
+            model_opt.ensemble_num,
+            model_opt.teacher_model)
+    elif model_opt.ensemble:
         compute = onmt.Loss.MCLLossCompute(model, tgt_vocab,
                                            model_opt.mcl_k,
                                            model_opt.ensemble_num,
@@ -165,6 +174,7 @@ def train_model(model, train_data, valid_data, fields, optim, model_opt):
         # 1. Train for one epoch on the training set.
         train_stats = trainer.train(epoch, report_func)
         if model_opt.ensemble:
+            print(trainer.total_counts)
             for s in train_stats:
                 print('Train perplexity: %g' % s.ppl())
                 print('Train accuracy: %g' % s.accuracy())
