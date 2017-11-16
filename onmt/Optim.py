@@ -10,6 +10,9 @@ class Optim(object):
             self.optimizer = optim.SGD(self.params, lr=self.lr)
         elif self.method == 'adagrad':
             self.optimizer = optim.Adagrad(self.params, lr=self.lr)
+            for group in self.optimizer.param_groups:
+                for p in group['params']:
+                    self.optimizer.state[p]['sum'] = self.optimizer.state[p]['sum'].fill_(0.1)
         elif self.method == 'adadelta':
             self.optimizer = optim.Adadelta(self.params, lr=self.lr)
         elif self.method == 'adam':
