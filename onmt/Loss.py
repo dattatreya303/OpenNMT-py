@@ -139,14 +139,17 @@ class MCLLossCompute(LossComputeBase):
     """
     def __init__(self, generator,
                  tgt_vocab, mcl_k,
-                 ensemble_num, teacher_model):
+                 ensemble_num,
+                 teacher_model,
+                 em_type):
         super(MCLLossCompute, self).__init__(generator, tgt_vocab)
 
         self.ensemble_num = ensemble_num
         self.k = mcl_k
+        self.em_type = em_type
+        self.teacher_model = teacher_model
 
         self.use_mask = False
-        self.teacher_model = teacher_model
 
     def make_shard_state(self, batch, output, range_, attns=None):
         """ See base class for args description. """
@@ -174,18 +177,30 @@ class MCLLossCompute(LossComputeBase):
             all_stats.append(self.stats(torch.sum(logpy).data.clone(),
                              logp_data, y_data))
         losses = torch.cat(losses, 1)
-        topk, indices = torch.topk(losses, self.k, dim=1, largest=False)
-        #topk.data.fill_(1)
-
         if self.use_mask:
-            mask = torch.zeros(losses.size()).cuda()
-            #upweight = torch.ones(losses.size()).cuda()
-            mask.scatter_(1, indices.data, 1.)
-            if self.teacher_model:
-                mask[:, 0].fill_(1)
-            #mask = upweight + 0.1 * mask
-            mask = Variable(mask)
-            losses = losses * mask
+            if self.em_type == 'hard':
+                topk, indices = torch.topk(losses,
+                                           self.k,
+                                           dim=1,
+                                           largest=False)
+                mask = torch.zeros(losses.size()).cuda()
+                mask.scatter_(1, indices.data, 1.)
+                if self.teacher_model:
+                    mask[:, 0].fill_(1)
+                # EXP with upweighting
+                # upweight = torch.ones(losses.size()).cuda()
+                # mask = upweight + 0.1 * mask
+                mask = Variable(mask)
+                losses = losses * mask
+            elif self.em_type == 'soft':
+                pxz = losses.clone()#.detach()
+                lossum = losses.sum(dim=1).unsqueeze(1).expand_as(pxz)
+                pzx = pxz.div(lossum)
+                losses = losses * pzx
+        topk, indices = torch.topk(losses,
+                                   self.k,
+                                   dim=1,
+                                   largest=False)
         loss = losses.sum()
         loss.div(batch.batch_size).backward()
 

@@ -14,7 +14,11 @@ def model_opts(parser):
     # Ensemble options
     parser.add_argument('-ensemble', action="store_true",
                         help='Use ensemble instead of single model.')
-    parser.add_argument('-ensemble_share_embedding', action="store_true",
+    parser.add_argument('-ensemble_share', default="nothing",
+                        choices=['nothing', 'embedding', 'encoder', 'decoder'],
+                        help='Share embeddings between ensembled models.')
+    parser.add_argument('-em_type', default="hard",
+                        choices=['hard', 'soft'],
                         help='Share embeddings between ensembled models.')
     parser.add_argument('-ensemble_num', type=int, default=4,
                         help='Number of models to ensemble.')
