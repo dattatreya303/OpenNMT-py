@@ -135,7 +135,8 @@ def make_loss_compute(model, tgt_vocab, dataset, opt, model_opt):
         compute = onmt.Loss.MCLLossCompute(model, tgt_vocab,
                                            model_opt.mcl_k,
                                            model_opt.ensemble_num,
-                                           model_opt.teacher_model)
+                                           model_opt.teacher_model,
+                                           model_opt.em_type)
     elif opt.copy_attn:
         compute = onmt.modules.CopyGeneratorLossCompute(
             model.generator, tgt_vocab, dataset, opt.copy_attn_force)
@@ -267,8 +268,13 @@ def build_model(model_opt, opt, fields, checkpoint):
                                                                 fields,
                                                                 use_gpu(opt),
                                                                 checkpoint))
-            if model_opt.ensemble_share_embedding and i > 0:
+            if model_opt.ensemble_share == "embedding" and i > 0:
                 models[i].encoder.embeddings.word_lut.weight = models[0].encoder.embeddings.word_lut.weight
+            elif model_opt.ensemble_share == "encoder" and i > 0:
+                models[i].encoder = models[0].encoder
+            elif model_opt.ensemble_share == "decoder" and i > 0:
+                models[i].encoder = models[0].encoder
+                models[i].decoder = models[0].decoder
         model = onmt.Models.Ensemble(models)
 
         if use_gpu(opt):
