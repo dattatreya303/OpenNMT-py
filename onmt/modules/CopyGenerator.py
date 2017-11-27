@@ -154,7 +154,8 @@ class MCLCopyGeneratorLossCompute(onmt.Loss.LossComputeBase):
                  tgt_vocab, dataset,
                  force_copy, mcl_k=1,
                  ensemble_num=2, teacher_model=False,
-                 eps=1e-20):
+                 eps=1e-20,
+                 em_type='hard'):
         super(MCLCopyGeneratorLossCompute, self).__init__(generator, tgt_vocab)
 
         self.dataset = dataset
@@ -167,6 +168,7 @@ class MCLCopyGeneratorLossCompute(onmt.Loss.LossComputeBase):
 
         self.use_mask = False
         self.teacher_model = teacher_model
+        self.em_type = em_type
 
     def compute_loss(self, batch, output, target, copy_attn, align):
         """
@@ -215,12 +217,18 @@ class MCLCopyGeneratorLossCompute(onmt.Loss.LossComputeBase):
         topk, indices = torch.topk(losses, self.k, dim=1, largest=False)
         topk.data.fill_(1)
         if self.use_mask:
-            mask = torch.zeros(losses.size())
-            mask.scatter_(1, indices.data, 1.)
-            if self.teacher_model:
-                mask[:, 0].fill_(1)
-            mask = Variable(mask)
-            losses = losses * mask
+            if self.em_type == 'hard':
+                mask = torch.zeros(losses.size())
+                mask.scatter_(1, indices.data, 1.)
+                if self.teacher_model:
+                    mask[:, 0].fill_(1)
+                mask = Variable(mask)
+                losses = losses * mask
+            if self.em_type == 'soft':
+                pxz = losses.clone()
+                lossum = losses.sum(dim=1).unsqueeze(1).expand_as(pxz)
+                pzx = pxz.div(lossum)
+                losses = losses * pzx
         loss = losses.sum()
 
         return loss, all_stats, indices
