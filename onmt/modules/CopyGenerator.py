@@ -153,9 +153,10 @@ class MCLCopyGeneratorLossCompute(onmt.Loss.LossComputeBase):
     def __init__(self, generator,
                  tgt_vocab, dataset,
                  force_copy, mcl_k=1,
-                 ensemble_num=2, teacher_model=False,
-                 eps=1e-20,
-                 em_type='hard'):
+                 ensemble_num=2,
+                 teacher_model=False,
+                 em_type='hard',
+                 eps=1e-20):
         super(MCLCopyGeneratorLossCompute, self).__init__(generator, tgt_vocab)
 
         self.dataset = dataset
