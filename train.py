@@ -130,7 +130,8 @@ def make_loss_compute(model, tgt_vocab, dataset, opt, model_opt):
             opt.copy_attn_force,
             model_opt.mcl_k,
             model_opt.ensemble_num,
-            model_opt.teacher_model)
+            model_opt.teacher_model,
+            model_opt.em_type)
     elif model_opt.ensemble:
         compute = onmt.Loss.MCLLossCompute(model, tgt_vocab,
                                            model_opt.mcl_k,
