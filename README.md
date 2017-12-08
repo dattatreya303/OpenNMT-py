@@ -1,13 +1,26 @@
-# PyOpenNMT: Open-Source Neural Machine Translation
+# OpenNMT-py: Open-Source Neural Machine Translation
 
 This is a [Pytorch](https://github.com/pytorch/pytorch)
 port of [OpenNMT](https://github.com/OpenNMT/OpenNMT),
-an open-source (MIT) neural machine translation system. Full documentation is available [here](http://opennmt.net/OpenNMT-py).
+an open-source (MIT) neural machine translation system. It is designed to be research friendly to try out new ideas in translation, summary, image-to-text, morphology, and many other domains.
 
-This code is still in heavy development (pre-version 0.1). We recommend forking if you want a stable version.
+
+OpenNMT-py is run as a collaborative open-source project. It is currently maintained by [Sasha Rush](http://github.com/srush) (Cambridge, MA), [Ben Peters](http://github.com/bpopeters) (Saarbrücken), and [Jianyu Zhan](http://github.com/jianyuzhan) (Shenzhen). The original code was written by [Adam Lerer](http://github.com/adamlerer) (NYC). Codebase is nearing a stable 0.1 version. We currently recommend forking if you want stable code.
+
+We love contributions. Please consult the Issues page for any [Contributions Welcome](https://github.com/OpenNMT/OpenNMT-py/issues?q=is%3Aissue+is%3Aopen+label%3A%22contributions+welcome%22) tagged post. 
 
 <center style="padding: 40px"><img width="70%" src="http://opennmt.github.io/simple-attn.png" /></center>
 
+
+Table of Contents
+=================
+
+  * [Requirements](#requirements)
+  * [Features](#features)
+  * [Quickstart](#quickstart)
+  * [Advanced](#advanced)
+  * [Citation](#citation)
+ 
 ## Requirements
 
 ```bash
@@ -22,18 +35,21 @@ The following OpenNMT features are implemented:
 - multi-layer bidirectional RNNs with attention and dropout
 - data preprocessing
 - saving and loading from checkpoints
-- inference (translation) with batching and beam search
-- multi-GPU
-
-Beta Features:
+- Inference (translation) with batching and beam search
 - Context gate
 - Multiple source and target RNN (lstm/gru) types and attention (dotprod/mlp) types
-- Image-to-text processing
-- Source word features
-- "Attention is all you need"
 - TensorBoard/Crayon logging
-- Copy, coverage, and structured attention
+- Source word features
 
+Beta Features (committed):
+- multi-GPU
+- Image-to-text processing
+- "Attention is all you need"
+- Copy, coverage
+- Structured attention
+- Conv2Conv convolution model
+- SRU "RNNs faster than CNN" paper
+- Inference time loss functions.
 
 ## Quickstart
 
@@ -111,7 +127,7 @@ An example of training for the WMT'16 Multimodal Translation task (http://www.st
 mkdir -p data/multi30k
 wget http://www.quest.dcs.shef.ac.uk/wmt16_files_mmt/training.tar.gz &&  tar -xf training.tar.gz -C data/multi30k && rm training.tar.gz
 wget http://www.quest.dcs.shef.ac.uk/wmt16_files_mmt/validation.tar.gz && tar -xf validation.tar.gz -C data/multi30k && rm validation.tar.gz
-wget https://staff.fnwi.uva.nl/d.elliott/wmt16/mmt16_task1_test.tgz && tar -xf mmt16_task1_test.tgz -C data/multi30k && rm mmt16_task1_test.tgz
+wget http://www.quest.dcs.shef.ac.uk/wmt17_files_mmt/mmt_task1_test2016.tar.gz && tar -xf mmt_task1_test2016.tar.gz -C data/multi30k && rm mmt_task1_test2016.tar.gz
 ```
 
 ### 1) Preprocess the data.
@@ -126,24 +142,44 @@ python preprocess.py -train_src data/multi30k/train.en.atok -train_tgt data/mult
 ### 2) Train the model.
 
 ```bash
-python train.py -data data/multi30k.atok.low.train.pt -save_model multi30k_model -gpuid 0
+python train.py -data data/multi30k.atok.low -save_model multi30k_model -gpuid 0
 ```
 
 ### 3) Translate sentences.
 
 ```bash
-python translate.py -gpu 0 -model multi30k_model_e13_*.pt -src data/multi30k/test.en.atok -tgt data/multi30k/test.de.atok -replace_unk -verbose -output multi30k.test.pred.atok
+python translate.py -gpu 0 -model multi30k_model_*_e13.pt -src data/multi30k/test.en.atok -tgt data/multi30k/test.de.atok -replace_unk -verbose -output multi30k.test.pred.atok
 ```
 
 ### 4) Evaluate.
 
 ```bash
-perl multi-bleu.perl data/multi30k/test.de.atok < multi30k.test.pred.atok
+perl tools/multi-bleu.perl data/multi30k/test.de.atok < multi30k.test.pred.atok
 ```
 
 ## Pretrained Models
 
 The following pretrained models can be downloaded and used with translate.py (These were trained with an older version of the code; they will be updated soon).
 
-- [onmt_model_en_de_200k](https://s3.amazonaws.com/pytorch/examples/opennmt/models/onmt_model_en_de_200k-4783d9c3.pt): An English-German translation model based on the 200k sentence dataset at [OpenNMT/IntegrationTesting](https://github.com/OpenNMT/IntegrationTesting/tree/master/data). Perplexity: 21.
-- [onmt_model_en_fr_b1M](https://s3.amazonaws.com/pytorch/examples/opennmt/models/onmt_model_en_fr_b1M-261c69a7.pt): An English-French model trained on benchmark-1M. Perplexity: 4.85.
+- [onmt_model_en_de_200k](https://drive.google.com/file/d/0B6N7tANPyVeBWE9WazRYaUd2QTg/view?usp=sharing): An English-German translation model based on the 200k sentence dataset at [OpenNMT/IntegrationTesting](https://github.com/OpenNMT/IntegrationTesting/tree/master/data). Perplexity: 20.
+- onmt_model_en_fr_b1M (coming soon): An English-French model trained on benchmark-1M. Perplexity: 4.85.
+
+
+## Citation
+
+[OpenNMT technical report](https://doi.org/10.18653/v1/P17-4012)
+
+```
+@inproceedings{opennmt,
+  author    = {Guillaume Klein and
+               Yoon Kim and
+               Yuntian Deng and
+               Jean Senellart and
+               Alexander M. Rush},
+  title     = {OpenNMT: Open-Source Toolkit for Neural Machine Translation},
+  booktitle = {Proc. ACL},
+  year      = {2017},
+  url       = {https://doi.org/10.18653/v1/P17-4012},
+  doi       = {10.18653/v1/P17-4012}
+}
+```
