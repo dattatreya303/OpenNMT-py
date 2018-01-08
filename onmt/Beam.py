@@ -65,11 +65,12 @@ class Beam(object):
         Returns: True if beam search is complete.
         """
         numWords = wordLk.size(1)
-
+        if len(self.nextYs) < 17:
+            wordLk[:,self._eos] = -1e20
+        
         # Sum the previous scores.
         if len(self.prevKs) > 0:
             beamLk = wordLk + self.scores.unsqueeze(1).expand_as(wordLk)
-
             # Don't let EOS have children.
             for i in range(self.nextYs[-1].size(0)):
                 if self.nextYs[-1][i] == self._eos:
@@ -150,6 +151,8 @@ class GNMTGlobalScorer(object):
         pen = self.beta * torch.min(cov, cov.clone().fill_(1.0)).log().sum(1)
         l_term = (((5 + len(beam.nextYs)) ** self.alpha) /
                   ((5 + 1) ** self.alpha))
+        #print(beam.nextYs)
+        #print("len", len(beam.nextYs))
         return (logprobs / l_term) + pen
 
     def updateGlobalState(self, beam):

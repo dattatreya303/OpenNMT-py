@@ -219,7 +219,7 @@ class MCLCopyGeneratorLossCompute(onmt.Loss.LossComputeBase):
         topk.data.fill_(1)
         if self.use_mask:
             if self.em_type == 'hard':
-                mask = torch.zeros(losses.size())
+                mask = torch.zeros(losses.size()).cuda()
                 mask.scatter_(1, indices.data, 1.)
                 if self.teacher_model:
                     mask[:, 0].fill_(1)

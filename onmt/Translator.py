@@ -138,7 +138,7 @@ class Translator(object):
         srcMap = rvar(batch.src_map.data)
         decStates.repeat_beam_size_times(beam_size)
         #scorer = None
-        scorer=onmt.GNMTGlobalScorer(0.4, 0.)
+        scorer=onmt.GNMTGlobalScorer(0., 0.)
         beam = [onmt.Beam(beam_size, n_best=self.opt.n_best,
                           cuda=self.opt.cuda,
                           vocab=self.fields["tgt"].vocab,
