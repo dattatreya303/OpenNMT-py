@@ -167,10 +167,24 @@ class Translator(object):
 
         if return_states:
             ret["context"] = context
-            target_states = []
-            for pred in ret['predictions'][0]:
-                target_states.append(
-                    self._run_pred(src, context, enc_states, batch, pred).squeeze())
+            """
+            Predictions are a list per input
+            Context is going round robin
+            resorting....
+            """
+            resorted = []
+            for topIx in range(self.n_best):
+                cbatch = []
+                for bIx in range(batch.batch_size):
+                    cbatch.append(ret["predictions"][bIx][topIx])
+                resorted.append(cbatch)
+
+            target_states = [[] for predIx in range(batch.batch_size)]
+            for b in resorted:
+                tstates = self._run_pred(src, context, enc_states,
+                                           batch, b).squeeze()
+                for predIx in range(batch.batch_size):
+                    target_states[predIx].append(tstates[:,predIx,:].squeeze())
             ret["target_states"] = target_states
         return ret
 
@@ -193,9 +207,15 @@ class Translator(object):
 
     def _run_pred(self, src, context, enc_states, batch, pred):
         tt = torch.cuda if self.cuda else torch
-        tgt_in = Variable(tt.LongTensor(pred).unsqueeze(1).unsqueeze(2))
-        context = context[:, 0, :].unsqueeze(1)
-        self.model.eval()
+        tgt_pad = self.fields["tgt"].vocab.stoi[onmt.io.PAD_WORD]
+        max_len = len(max(pred, key=len))
+        context = context[:, :batch.batch_size, :]
+        pred_in = []
+        for p in pred:
+            while len(p) < max_len:
+                p.append(tgt_pad)
+            pred_in.append(tt.LongTensor(p).unsqueeze(1))
+        tgt_in = Variable(torch.stack(pred_in, 1))
 
         dec_states = self.model.decoder.init_decoder_state(
             src, context, enc_states)
