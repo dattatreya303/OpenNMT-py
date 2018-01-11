@@ -183,8 +183,11 @@ class Translator(object):
             for b in resorted:
                 tstates = self._run_pred(src, context, enc_states,
                                            batch, b).squeeze()
-                for predIx in range(batch.batch_size):
-                    target_states[predIx].append(tstates[:,predIx,:].squeeze())
+                if batch.batch_size > 1:
+                    for predIx in range(batch.batch_size):
+                        target_states[predIx].append(tstates[:,predIx,:].squeeze())
+                else:
+                    target_states[0].append(tstates)
             ret["target_states"] = target_states
         return ret
 
