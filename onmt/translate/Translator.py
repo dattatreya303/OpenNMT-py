@@ -46,7 +46,7 @@ class Translator(object):
                 "scores": [],
                 "log_probs": []}
 
-    def translate_batch(self, batch, data):
+    def translate_batch(self, batch, data, return_states=False):
         """
         Translate a batch of sentences.
 
@@ -94,7 +94,7 @@ class Translator(object):
 
         enc_states, context = self.model.encoder(src, src_lengths)
         dec_states = self.model.decoder.init_decoder_state(
-                                        src, context, enc_states)
+            src, context, enc_states)
 
         if src_lengths is None:
             src_lengths = torch.Tensor(batch_size).type_as(context.data)\
@@ -131,6 +131,7 @@ class Translator(object):
             # Run one step.
             dec_out, dec_states, attn = self.model.decoder(
                 inp, context, dec_states, context_lengths=context_lengths)
+
             dec_out = dec_out.squeeze(0)
             # dec_out: beam x rnn_size
 
@@ -163,6 +164,14 @@ class Translator(object):
         if "tgt" in batch.__dict__:
             ret["gold_score"] = self._run_target(batch, data)
         ret["batch"] = batch
+
+        if return_states:
+            ret["context"] = context
+            target_states = []
+            for pred in ret['predictions'][0]:
+                target_states.append(
+                    self._run_pred(src, context, enc_states, batch, pred).squeeze())
+            ret["target_states"] = target_states
         return ret
 
     def _from_beam(self, beam):
@@ -181,6 +190,20 @@ class Translator(object):
             ret["scores"].append(scores)
             ret["attention"].append(attn)
         return ret
+
+    def _run_pred(self, src, context, enc_states, batch, pred):
+        tt = torch.cuda if self.cuda else torch
+        tgt_in = Variable(tt.LongTensor(pred).unsqueeze(1).unsqueeze(2))
+        context = context[:, 0, :].unsqueeze(1)
+        self.model.eval()
+
+        dec_states = self.model.decoder.init_decoder_state(
+            src, context, enc_states)
+        _, src_lengths = batch.src
+
+        dec_out, dec_states, attn = self.model.decoder(
+            tgt_in, context, dec_states, context_lengths=src_lengths)
+        return dec_out
 
     def _run_target(self, batch, data):
         data_type = data.data_type
