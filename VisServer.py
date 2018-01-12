@@ -331,7 +331,7 @@ class ONMTmodelAPI():
 
 def main():
     model = ONMTmodelAPI("demo-model_acc_41.38_ppl_28.26_e13.pt")
-    reply = model.translate(["This is a test .", "this is a second test ."])
+    reply = model.translate(["This is a test ."]) # , "this is a second test ."])
     print(json.dumps(reply, indent=2, sort_keys=True))
     print(reply.keys())
 
