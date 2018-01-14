@@ -104,10 +104,18 @@ def make_train_data_iter(train_dataset, opt):
     ordered iterator strategy here, but more sophisticated strategy
     like curriculum learning is ok too.
     """
+    # Sort batch by decreasing lengths of sentence required by pytorch.
+    # sort=False means "Use dataset's sortkey instead of iterator's".
+    batch_size_fn = None
+    if opt.batch_type == "tokens":
+        def batch_size_fn(new, count, sofar):
+            return sofar + len(new.tgt) + 1
+
     return onmt.io.OrderedIterator(
                 dataset=train_dataset, batch_size=opt.batch_size,
+                batch_size_fn=batch_size_fn,
                 device=opt.gpuid[0] if opt.gpuid else -1,
-                repeat=False)
+                sort=False, sort_within_batch=True, repeat=False)
 
 
 def make_valid_data_iter(valid_dataset, opt):
@@ -117,10 +125,12 @@ def make_valid_data_iter(valid_dataset, opt):
     ordered iterator strategy here, but more sophisticated strategy
     is ok too.
     """
+    # Sort batch by decreasing lengths of sentence required by pytorch.
+    # sort=False means "Use dataset's sortkey instead of iterator's".
     return onmt.io.OrderedIterator(
                 dataset=valid_dataset, batch_size=opt.valid_batch_size,
                 device=opt.gpuid[0] if opt.gpuid else -1,
-                train=False, sort=True)
+                train=False, sort=False, sort_within_batch=True)
 
 
 def make_loss_compute(model, tgt_vocab, dataset, opt):
@@ -133,8 +143,9 @@ def make_loss_compute(model, tgt_vocab, dataset, opt):
         compute = onmt.modules.CopyGeneratorLossCompute(
             model.generator, tgt_vocab, dataset, opt.copy_attn_force)
     else:
-        compute = onmt.Loss.NMTLossCompute(model.generator, tgt_vocab,
-                                           opt.label_smoothing)
+        compute = onmt.Loss.NMTLossCompute(
+            model.generator, tgt_vocab,
+            label_smoothing=opt.label_smoothing)
 
     if use_gpu(opt):
         compute.cuda()
@@ -159,7 +170,8 @@ def train_model(model, train_dataset, valid_dataset,
 
     trainer = onmt.Trainer(model, train_iter, valid_iter,
                            train_loss, valid_loss, optim,
-                           trunc_size, shard_size, data_type)
+                           trunc_size, shard_size, data_type,
+                           opt.normalization, opt.accum_count)
 
     for epoch in range(opt.start_epoch, opt.epochs + 1):
         print('')

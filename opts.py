@@ -253,6 +253,18 @@ def train_opts(parser):
     group = parser.add_argument_group('Optimization- Type')
     group.add_argument('-batch_size', type=int, default=64,
                        help='Maximum batch size for training')
+    group.add_argument('-batch_type', default='sents',
+                       choices=["sents", "tokens"],
+                       help="""Batch grouping for batch_size. Standard
+                               is sents. Tokens will do dynamic batching""")
+    group.add_argument('-normalization', default='sents',
+                       choices=["sents", "tokens"],
+                       help='Normalization method of the gradient.')
+    group.add_argument('-accum_count', type=int, default=1,
+                       help="""Accumulate gradient this many times.
+                       Approximately equivalent to updating
+                       batch_size * accum_count batches at once.
+                       Recommended for Transformer.""")
     group.add_argument('-valid_batch_size', type=int, default=32,
                        help='Maximum batch size for validation')
     group.add_argument('-max_generator_batches', type=int, default=32,
@@ -359,6 +371,12 @@ def translate_opts(parser):
     group.add_argument('-output', default='pred.txt',
                        help="""Path to output the predictions (each line will
                        be the decoded sequence""")
+    group.add_argument('-report_bleu', action='store_true',
+                       help="""Report bleu score after translation,
+                       call tools/multi-bleu.perl on command line""")
+    group.add_argument('-report_rouge', action='store_true',
+                       help="""Report rouge 1/2/3/L/SU4 score after translation
+                       call tools/test_rouge.py on command line""")
 
     # Options most relevant to summarization.
     group.add_argument('-dynamic_dict', action='store_true',
@@ -369,6 +387,12 @@ def translate_opts(parser):
     group = parser.add_argument_group('Beam')
     group.add_argument('-beam_size',  type=int, default=5,
                        help='Beam size')
+    group.add_argument('-min_length', type=int, default=0,
+                       help='Minimum prediction length')
+    group.add_argument('-max_length', type=int, default=100,
+                       help='Maximum prediction length.')
+    group.add_argument('-max_sent_length', action=DeprecateAction,
+                       help="Deprecated, use `-max_length` instead")
 
     # Alpha and Beta values for Google Length + Coverage penalty
     # Described here: https://arxiv.org/pdf/1609.08144.pdf, Section 7
@@ -377,8 +401,6 @@ def translate_opts(parser):
                         (higher = longer generation)""")
     group.add_argument('-beta', type=float, default=-0.,
                        help="""Coverage penalty parameter""")
-    group.add_argument('-max_sent_length', type=int, default=100,
-                       help='Maximum sentence length.')
     group.add_argument('-replace_unk', action="store_true",
                        help="""Replace the generated UNK tokens with the
                        source token that had highest attention weight. If
