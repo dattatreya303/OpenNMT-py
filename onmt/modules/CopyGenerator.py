@@ -137,7 +137,8 @@ class CopyGeneratorLossCompute(onmt.Loss.LossComputeBase):
     """
     def __init__(self, generator, tgt_vocab, dataset,
                  force_copy, eps=1e-20):
-        super(CopyGeneratorLossCompute, self).__init__(generator, tgt_vocab)
+        super(CopyGeneratorLossCompute, self).__init__(
+            generator, tgt_vocab)
 
         self.dataset = dataset
         self.force_copy = force_copy

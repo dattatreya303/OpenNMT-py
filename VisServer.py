@@ -271,6 +271,7 @@ class ONMTmodelAPI():
         test_data = onmt.io.OrderedIterator(
             dataset=data, device=self.opt.gpu,
             batch_size=self.opt.batch_size, train=False, sort=False,
+            sort_within_batch=True,
             shuffle=False)
 
         # set n_best in translator
