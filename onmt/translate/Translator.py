@@ -47,7 +47,7 @@ class Translator(object):
                 "scores": [],
                 "log_probs": []}
 
-    def translate_batch(self, batch, data, return_states=False):
+    def translate_batch(self, batch, data, return_states=False, partial=None):
         """
         Translate a batch of sentences.
 
@@ -56,6 +56,8 @@ class Translator(object):
         Args:
            batch (:obj:`Batch`): a batch from a dataset object
            data (:obj:`Dataset`): the dataset object
+           return_states: whether to return states as well
+           partial: partial input to the decoder
 
 
         Todo:
@@ -95,8 +97,15 @@ class Translator(object):
             _, src_lengths = batch.src
 
         enc_states, context = self.model.encoder(src, src_lengths)
-        dec_states = self.model.decoder.init_decoder_state(
-            src, context, enc_states)
+        # If we have partial translation, run decoder over them
+        if partial:
+            _, dec_states = self._run_pred(src, context,
+                                           enc_states, batch,
+                                           partial)
+        else:
+            dec_states = self.model.decoder.init_decoder_state(
+                src, context, enc_states)
+
 
         if src_lengths is None:
             src_lengths = torch.Tensor(batch_size).type_as(context.data)\
@@ -183,8 +192,9 @@ class Translator(object):
 
             target_states = [[] for predIx in range(batch.batch_size)]
             for b in resorted:
-                tstates = self._run_pred(src, context, enc_states,
-                                           batch, b).squeeze()
+                tstates, _ = self._run_pred(src, context, enc_states,
+                                           batch, b)
+                tstates = tstates.squeeze()
                 if batch.batch_size > 1:
                     for predIx in range(batch.batch_size):
                         target_states[predIx].append(tstates[:,predIx,:].squeeze())
@@ -228,7 +238,7 @@ class Translator(object):
 
         dec_out, dec_states, attn = self.model.decoder(
             tgt_in, context, dec_states, context_lengths=src_lengths)
-        return dec_out
+        return dec_out, dec_states
 
     def _run_target(self, batch, data):
         data_type = data.data_type
