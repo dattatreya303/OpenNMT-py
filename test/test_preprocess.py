@@ -39,9 +39,9 @@ class TestData(unittest.TestCase):
     def dataset_build(self, opt):
         fields = onmt.io.get_fields("text", 0, 0)
 
-        trains = preprocess.build_save_dataset('train', fields, opt)
+        train_data_files = preprocess.build_save_dataset('train', fields, opt)
 
-        preprocess.build_save_vocab(trains, opt)
+        preprocess.build_save_vocab(train_data_files, fields, opt)
 
         preprocess.build_save_dataset('valid', fields, opt)
 
@@ -57,7 +57,8 @@ class TestData(unittest.TestCase):
 
         self.assertEqual(Counter({'c': 6, 'b': 4, 'a': 2, 'e': 2, 'f': 1}),
                          merged.freqs)
-        self.assertEqual(6, len(merged.itos))
+        # 3 specicials + 2 words (since we pass 2 to merge_vocabs)
+        self.assertEqual(5, len(merged.itos))
         self.assertTrue('b' in merged.itos)
 
 

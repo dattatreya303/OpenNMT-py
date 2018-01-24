@@ -69,6 +69,10 @@ class TextDataset(ONMTDatasetBase):
         out_examples = (self._construct_example_fromlist(
                             ex_values, out_fields)
                         for ex_values in example_values)
+        # If out_examples is a generator, we need to save the filter_pred
+        # function in serialization too, which would cause a problem when
+        # `torch.save()`. Thus we materialize it as a list.
+        out_examples = list(out_examples)
 
         def filter_pred(example):
             return 0 < len(example.src) <= src_seq_length \
@@ -82,7 +86,26 @@ class TextDataset(ONMTDatasetBase):
 
     def sort_key(self, ex):
         """ Sort using length of source sentences. """
-        return -len(ex.src)
+        return len(ex.src)
+
+    @staticmethod
+    def collapse_copy_scores(scores, batch, tgt_vocab, src_vocabs):
+        """
+        Given scores from an expanded dictionary
+        corresponeding to a batch, sums together copies,
+        with a dictionary word when it is ambigious.
+        """
+        offset = len(tgt_vocab)
+        for b in range(batch.batch_size):
+            index = batch.indices.data[b]
+            src_vocab = src_vocabs[index]
+            for i in range(1, len(src_vocab)):
+                sw = src_vocab.itos[i]
+                ti = tgt_vocab.stoi[sw]
+                if ti != 0:
+                    scores[:, b, ti] += scores[:, b, offset + i]
+                    scores[:, b, offset + i].fill_(1e-20)
+        return scores
 
     @staticmethod
     def make_text_examples_nfeats_tpl(path, truncate, side):
@@ -173,7 +196,7 @@ class TextDataset(ONMTDatasetBase):
                 torchtext.data.Field(init_token=BOS_WORD, eos_token=EOS_WORD,
                                      pad_token=PAD_WORD)
 
-        def make_src(data, _):
+        def make_src(data, vocab, is_train):
             src_size = max([t.size(0) for t in data])
             src_vocab_size = max([t.max() for t in data]) + 1
             alignment = torch.zeros(src_size, len(data), src_vocab_size)
@@ -186,7 +209,7 @@ class TextDataset(ONMTDatasetBase):
             use_vocab=False, tensor_type=torch.FloatTensor,
             postprocessing=make_src, sequential=False)
 
-        def make_tgt(data, _):
+        def make_tgt(data, vocab, is_train):
             tgt_size = max([t.size(0) for t in data])
             alignment = torch.zeros(tgt_size, len(data)).long()
             for i, sent in enumerate(data):
@@ -224,7 +247,7 @@ class TextDataset(ONMTDatasetBase):
 
         return num_feats
 
-    # Below are helper functions for intra-class use only.self.
+    # Below are helper functions for intra-class use only.
     def _dynamic_dict(self, examples_iter):
         for example in examples_iter:
             src = example["src"]
@@ -285,6 +308,7 @@ class ShardedTextCorpusIterator(object):
         On each call, it iterates over as many (example_dict, nfeats) tuples
         until this shard's size equals to or approximates `self.shard_size`.
         """
+        iteration_index = -1
         if self.assoc_iter is not None:
             # We have associate iterator, just yields tuples
             # util we run parallel with it.
@@ -295,7 +319,8 @@ class ShardedTextCorpusIterator(object):
                         "Two corpuses must have same number of lines!")
 
                 self.line_index += 1
-                yield self._example_dict_iter(line)
+                iteration_index += 1
+                yield self._example_dict_iter(line, iteration_index)
 
             if self.assoc_iter.eof:
                 self.eof = True
@@ -322,7 +347,8 @@ class ShardedTextCorpusIterator(object):
                     raise StopIteration
 
                 self.line_index += 1
-                yield self._example_dict_iter(line)
+                iteration_index += 1
+                yield self._example_dict_iter(line, iteration_index)
 
     def hit_end(self):
         return self.eof
@@ -342,12 +368,12 @@ class ShardedTextCorpusIterator(object):
 
         return self.n_feats
 
-    def _example_dict_iter(self, line):
+    def _example_dict_iter(self, line, index):
         line = line.split()
         if self.line_truncate:
             line = line[:self.line_truncate]
         words, feats, n_feats = TextDataset.extract_text_features(line)
-        example_dict = {self.side: words, "indices": self.line_index}
+        example_dict = {self.side: words, "indices": index}
         if feats:
             # All examples must have same number of features.
             aeq(self.n_feats, n_feats)
