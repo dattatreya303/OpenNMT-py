@@ -140,7 +140,7 @@ class Translator(object):
             inp = inp.unsqueeze(2)
 
             # Run one step.
-            dec_out, dec_states, attn = self.model.decoder(
+            dec_out, dec_states, attn, weighted_context = self.model.decoder(
                 inp, context, dec_states, context_lengths=context_lengths)
 
             dec_out = dec_out.squeeze(0)
@@ -236,7 +236,7 @@ class Translator(object):
             src, context, enc_states)
         _, src_lengths = batch.src
 
-        dec_out, dec_states, attn = self.model.decoder(
+        dec_out, dec_states, attn, weighted_context = self.model.decoder(
             tgt_in, context, dec_states, context_lengths=src_lengths)
         return dec_out, dec_states
 

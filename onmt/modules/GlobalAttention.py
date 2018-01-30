@@ -180,7 +180,6 @@ class GlobalAttention(nn.Module):
         # each context vector c_t is the weighted average
         # over all the source hidden states
         c = torch.bmm(align_vectors, context)
-
         # concatenate
         concat_c = torch.cat([c, input], 2).view(batch*targetL, dim*2)
         attn_h = self.linear_out(concat_c).view(batch, targetL, dim)
@@ -212,4 +211,4 @@ class GlobalAttention(nn.Module):
             aeq(batch, batch_)
             aeq(sourceL, sourceL_)
 
-        return attn_h, align_vectors
+        return attn_h, align_vectors, c

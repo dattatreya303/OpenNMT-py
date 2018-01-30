@@ -255,7 +255,7 @@ class RNNDecoderBase(nn.Module):
         # END Args Check
 
         # Run the forward pass of the RNN.
-        hidden, outputs, attns, coverage = self._run_forward_pass(
+        hidden, outputs, attns, coverage, weighted_context = self._run_forward_pass(
             input, context, state, context_lengths=context_lengths)
 
         # Update the state with the result.
@@ -269,7 +269,7 @@ class RNNDecoderBase(nn.Module):
         for k in attns:
             attns[k] = torch.stack(attns[k])
 
-        return outputs, state, attns
+        return outputs, state, attns, weighted_context
 
     def _fix_enc_hidden(self, h):
         """
@@ -452,15 +452,17 @@ class InputFeedRNNDecoder(RNNDecoderBase):
 
         # Input feed concatenates hidden state with
         # input at every time step.
+        contexts = []
         for i, emb_t in enumerate(emb.split(1)):
             emb_t = emb_t.squeeze(0)
             emb_t = torch.cat([emb_t, output], 1)
 
             rnn_output, hidden = self.rnn(emb_t, hidden)
-            attn_output, attn = self.attn(
+            attn_output, attn, weighted_context = self.attn(
                 rnn_output,
                 context.transpose(0, 1),
                 context_lengths=context_lengths)
+            contexts += [weighted_context]
             if self.context_gate is not None:
                 # TODO: context gate should be employed
                 # instead of second RNN transform.
@@ -485,8 +487,10 @@ class InputFeedRNNDecoder(RNNDecoderBase):
                                               context.transpose(0, 1))
                 attns["copy"] += [copy_attn]
 
+
+        contexts = torch.cat(contexts, 1)
         # Return result.
-        return hidden, outputs, attns, coverage
+        return hidden, outputs, attns, coverage, contexts
 
     def _build_rnn(self, rnn_type, input_size,
                    hidden_size, num_layers, dropout):
@@ -547,15 +551,16 @@ class NMTModel(nn.Module):
         tgt = tgt[:-1]  # exclude last target from inputs
         enc_hidden, context = self.encoder(src, lengths)
         enc_state = self.decoder.init_decoder_state(src, context, enc_hidden)
-        out, dec_state, attns = self.decoder(tgt, context,
-                                             enc_state if dec_state is None
-                                             else dec_state,
-                                             context_lengths=lengths)
+        out, dec_state, attns, weighted_context = self.decoder(
+            tgt, context,
+            enc_state if dec_state is None
+            else dec_state,
+            context_lengths=lengths)
         if self.multigpu:
             # Not yet supported on multi-gpu
             dec_state = None
             attns = None
-        return out, attns, dec_state
+        return out, attns, dec_state, weighted_context
 
 
 class DecoderState(object):
