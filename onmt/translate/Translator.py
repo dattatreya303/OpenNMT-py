@@ -99,7 +99,7 @@ class Translator(object):
         enc_states, context = self.model.encoder(src, src_lengths)
         # If we have partial translation, run decoder over them
         if partial:
-            _, dec_states = self._run_pred(src, context,
+            _, dec_states, __ = self._run_pred(src, context,
                                            enc_states, batch,
                                            partial)
         else:
@@ -191,16 +191,21 @@ class Translator(object):
                 resorted.append(cbatch)
 
             target_states = [[] for predIx in range(batch.batch_size)]
+            target_context = [[] for predIx in range(batch.batch_size)]
             for b in resorted:
-                tstates, _ = self._run_pred(src, context, enc_states,
+                tstates, _, cstar = self._run_pred(src, context, enc_states,
                                            batch, b)
                 tstates = tstates.squeeze()
+                cstar = cstar.squeeze()
                 if batch.batch_size > 1:
                     for predIx in range(batch.batch_size):
                         target_states[predIx].append(tstates[:,predIx,:].squeeze())
+                        target_context[predIx].append(cstar[predIx,:,:].squeeze())
                 else:
                     target_states[0].append(tstates)
+                    target_context[0].append(cstar)
             ret["target_states"] = target_states
+            ret["target_cstar"] = target_context
         return ret
 
     def _from_beam(self, beam):
@@ -238,7 +243,7 @@ class Translator(object):
 
         dec_out, dec_states, attn, weighted_context = self.model.decoder(
             tgt_in, context, dec_states, context_lengths=src_lengths)
-        return dec_out, dec_states
+        return dec_out, dec_states, weighted_context
 
     def _run_target(self, batch, data):
         data_type = data.data_type
