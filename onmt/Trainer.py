@@ -175,7 +175,7 @@ class Trainer(object):
                     # 2. F-prop all but generator.
                     if self.accum_count == 1:
                         self.model.zero_grad()
-                    outputs, attns, dec_state = \
+                    outputs, attns, dec_state, _, __ = \
                         self.model(src, tgt, src_lengths, dec_state)
 
                     # 3. Compute loss in shards for memory efficiency.
@@ -256,7 +256,7 @@ class Trainer(object):
             tgt = onmt.io.make_features(batch, 'tgt')
 
             # F-prop through the model.
-            outputs, attns, _, __ = self.model(src, tgt, src_lengths)
+            outputs, attns, _, __, ___ = self.model(src, tgt, src_lengths)
 
             # Compute loss.
             batch_stats = self.valid_loss.monolithic_compute_loss(
