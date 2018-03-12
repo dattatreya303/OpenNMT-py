@@ -261,13 +261,13 @@ class ONMTmodelAPI():
 
         if dump_data:
             # Code to extract the source and target dict
-            with open("data/src.dict", 'w') as f:
+            with open("s2s/src.dict", 'w') as f:
                 for w, ix in self.translator.fields['src'].vocab.stoi.items():
                     f.write(str(ix) + " " + w + "\n")
-            with open("data/tgt.dict", 'w') as f:
+            with open("s2s/tgt.dict", 'w') as f:
                 for w, ix in self.translator.fields['tgt'].vocab.stoi.items():
                     f.write(str(ix) + " " + w + "\n")
-            with h5py.File("data/embs.h5", 'w') as f:
+            with h5py.File("s2s/embs.h5", 'w') as f:
                 f.create_dataset("encoder", data=self.translator.model.encoder.embeddings.emb_luts[0].weight.data.numpy())
                 f.create_dataset("decoder", data=self.translator.model.decoder.embeddings.emb_luts[0].weight.data.numpy())
 
@@ -363,7 +363,8 @@ class ONMTmodelAPI():
 
 
 def main():
-    model = ONMTmodelAPI("../S2SPlay/model_api/data/model_en_de_20.49.pt")
+    # model = ONMTmodelAPI("../S2SPlay/model_api/data/model_en_de_20.49.pt")
+    model = ONMTmodelAPI("./baseline-brnn2.s131_acc_62.71_ppl_7.74_e20.pt")
     # reply = model.translate(["This is a test ."])
     reply = model.translate(["This", "That"], dump_data=True)
     print("______")
