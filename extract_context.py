@@ -140,8 +140,8 @@ def extract_states(model, fields, data_type, model_opt, data_iter):
     # tgt_vocab = fields['tgt'].vocab
 
     # Select max length to prune
-    max_src_len = 75
-    max_tgt_len = 75
+    max_src_len = 50
+    max_tgt_len = 50
     # Set path and remove if file exists already
     path = "S2S/states.h5"
     if os.path.isfile(path):
@@ -211,34 +211,36 @@ def extract_states(model, fields, data_type, model_opt, data_iter):
 
             # Get the sizes
             tgtsize, bsize, srcsize = attns['std'].size()
+            tgt_pad = max(0, max_tgt_len - tgtsize)
+            src_pad = max(0, max_src_len - srcsize)
+
 
             # Pad and store the src
             padded_src = batch.src[0].data.numpy().transpose()
+            padded_src = padded_src[:,:max_src_len]
             padded_src = np.pad(padded_src,
                                 ((0, 0),
-                                 (0, max_src_len - srcsize)),
+                                 (0, src_pad)),
                                 mode='constant',
                                 constant_values=1)
             srcset[bcounter:] = padded_src
 
             # Pad and store the tgt
-            # print("tgt", batch.tgt[:-1].size())
             padded_tgt = batch.tgt[:-1].data.numpy().transpose()
+            padded_tgt = padded_tgt[:,:max_tgt_len]
+
             padded_tgt = np.pad(padded_tgt,
                                 ((0, 0),
-                                 (0, max_tgt_len - tgtsize)),
+                                 (0, tgt_pad)),
                                 mode='constant',
                                 constant_values=1)
+
             tgtset[bcounter:] = padded_tgt
 
             # Pad and store the attention
-            # print(attns['std'].size())
-            # print(attns['std'].data[0])
-            # print(torch.sum(attns['std'].data[0]))
             padded_attn = attns['std'].data.numpy()
             padded_attn = padded_attn.transpose((1,0,2))
-            # print(padded_attn.shape)
-            # print(padded_attn[:,0,:])
+            padded_attn = padded_attn[:, :max_tgt_len, :max_src_len]
             padded_attn = np.pad(padded_attn,
                                  ((0, 0),
                                   (0, max_tgt_len - padded_attn.shape[1]),
@@ -249,6 +251,7 @@ def extract_states(model, fields, data_type, model_opt, data_iter):
 
             # Pad and store the weighted context
             padded_c = weighted_context.data.numpy()
+            padded_c = padded_c[:, :max_tgt_len, :]
             padded_c = np.pad(padded_c,
                               ((0, 0),
                                (0, max_tgt_len - padded_c.shape[1]),
@@ -260,6 +263,7 @@ def extract_states(model, fields, data_type, model_opt, data_iter):
             # Pad and store decoder outputs (before generator)
             padded_enc = context.data.numpy()
             padded_enc = padded_enc.transpose((1,0,2))
+            padded_enc = padded_enc[:, :max_src_len, :]
             padded_enc = np.pad(padded_enc,
                               ((0, 0),
                                (0, max_src_len - padded_enc.shape[1]),
@@ -270,6 +274,7 @@ def extract_states(model, fields, data_type, model_opt, data_iter):
 
             padded_dec = outputs.data.numpy()
             padded_dec = padded_dec.transpose((1,0,2))
+            padded_dec = padded_dec[:, :max_tgt_len, :]
             padded_dec = np.pad(padded_dec,
                               ((0, 0),
                                (0, max_tgt_len - padded_dec.shape[1]),
