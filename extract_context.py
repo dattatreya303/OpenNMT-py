@@ -286,7 +286,7 @@ def extract_states(model, fields, data_type, model_opt, data_iter):
             bcounter += bsize
             if bcounter % 100 == 0:
                 print("Example #", bcounter)
-            if bcounter > 100:
+            if bcounter > 50000:
                 break
 
 
