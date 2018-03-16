@@ -359,6 +359,7 @@ class ONMTmodelAPI():
                 res['decoder'] = decoderRes
                 res['attn'] = attnRes
                 res['beam'] = batch_data['beam'][transIx]
+                res['beam_trace'] = batch_data['beam_trace'][transIx]
                 reply[transIx] = res
         return reply
 
@@ -367,15 +368,15 @@ def main():
     # model = ONMTmodelAPI("../S2SPlay/model_api/data/model_en_de_20.49.pt")
     model = ONMTmodelAPI("../S2Splay/model_api/processing/s2s_iwslt_ende/baseline-brnn.en-de.s154_acc_61.58_ppl_7.43_e21.pt")
     # reply = model.translate(["This is a test ."])
-    # reply = model.translate(["this .",], dump_data=False)
-    reply = model.translate(["this .","that"], dump_data=False)
+    reply = model.translate(["this .",], dump_data=False)
+    # reply = model.translate(["this .","that"], dump_data=False)
     print("______")
     # reply = model.translate(["This is a test ."], partial_decode=["Dies ist"])
     # reply = model.translate(["This is a test .", "this is a second test ."],
     #                          partial_decode=["Dies ist", "Ein zweiter"])
     print(len(reply[0]['decoder']))
     print(len(reply[0]['decoder'][0]))
-    print(reply[0].keys())
+    print(reply[0]['beam_trace'])
 
     #print(json.dumps(reply, indent=2, sort_keys=True))
 

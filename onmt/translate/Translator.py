@@ -175,6 +175,24 @@ class Translator(object):
 
         # (4) Extract sentences from beam.
         ret = self._from_beam(beam)
+
+
+        # Compute the beam trace
+        trace = {}
+        for j, b in enumerate(beam):
+            # k holds the chosen beam, y the predictions
+            all_current = []
+            last = []
+            for ix, cur_tops in enumerate(b.prev_ks):
+                # print("cur_top", cur_tops.numpy())
+                # print("cur_preds", b.next_ys[ix].numpy())
+                if not last:
+                    last = [[b.next_ys[0][k]] for k in cur_tops]
+                else:
+                    last = [last[a] + [b.next_ys[ix][k]] for a, k in enumerate(cur_tops)]
+                all_current.append(last)
+            trace[j] = all_current
+
         ret["gold_score"] = [0] * batch_size
         if "tgt" in batch.__dict__:
             ret["gold_score"] = self._run_target(batch, data)
@@ -213,6 +231,8 @@ class Translator(object):
             res = self._get_top_k(src, context, enc_states,
                                   batch, resorted[0])
             ret["beam"] = res
+            ret["beam_trace"] = trace
+
             ret["target_states"] = target_states
             ret["target_cstar"] = target_context
         return ret
@@ -226,6 +246,10 @@ class Translator(object):
             scores, ks = b.sort_finished(minimum=n_best)
             hyps, attn = [], []
             for i, (times, k) in enumerate(ks[:n_best]):
+                # print(times)
+                # for ix in range(times):
+                #     h, _ = b.get_hyp(ix, k)
+                #     print(h)
                 hyp, att = b.get_hyp(times, k)
                 hyps.append(hyp)
                 attn.append(att)
