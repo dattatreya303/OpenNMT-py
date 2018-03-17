@@ -143,7 +143,7 @@ def extract_states(model, fields, data_type, model_opt, data_iter):
     max_src_len = 50
     max_tgt_len = 50
     # Set path and remove if file exists already
-    path = "S2S/states.h5"
+    path = "s2s/states.h5"
     if os.path.isfile(path):
         os.remove(path)
     with h5py.File(path, "a") as f:
@@ -166,7 +166,7 @@ def extract_states(model, fields, data_type, model_opt, data_iter):
                                    chunks=(10, 5, 5))
         cstarset = f.create_dataset("cstar", (opt.batch_size,
                                               max_tgt_len,
-                                              500),
+                                              100),
                                     maxshape=(None, None, None),
                                     dtype="float16",
                                     chunks=(10, 5, 5))
@@ -175,14 +175,14 @@ def extract_states(model, fields, data_type, model_opt, data_iter):
         encoderset = f.create_dataset("encoder_out",
                                       (opt.batch_size,
                                        max_tgt_len,
-                                       500),
+                                       100),
                                       maxshape=(None, None, None),
                                       dtype="float16",
                                       chunks=(10, 5, 5))
         decoderset = f.create_dataset("decoder_out",
                                       (opt.batch_size,
                                        max_tgt_len,
-                                       500),
+                                       100),
                                       maxshape=(None, None, None),
                                       dtype="float16",
                                       chunks=(10, 5, 5))
@@ -286,8 +286,8 @@ def extract_states(model, fields, data_type, model_opt, data_iter):
             bcounter += bsize
             if bcounter % 100 == 0:
                 print("Example #", bcounter)
-            if bcounter > 100:
-                break
+            # if bcounter > 100:
+            #     break
 
 
 def check_save_model_path():
