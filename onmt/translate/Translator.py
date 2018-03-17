@@ -189,7 +189,8 @@ class Translator(object):
                 if not last:
                     last = [[b.next_ys[0][k]] for k in cur_tops]
                 else:
-                    last = [last[a] + [b.next_ys[ix][k]] for a, k in enumerate(cur_tops)]
+                    last = [last[b.prev_ks[ix][a]] + [b.next_ys[ix][k]] for a, k
+                            in enumerate(cur_tops)]
                 all_current.append(last)
             trace[j] = all_current
 
