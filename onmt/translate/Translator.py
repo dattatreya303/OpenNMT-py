@@ -103,9 +103,14 @@ class Translator(object):
         enc_states, context = self.model.encoder(src, src_lengths)
         # If we have partial translation, run decoder over them
         if partial:
+            print("partial in Translator", partial)
+            partial_pre = [p[:-1] for p in partial]
             _, dec_states, __ = self._run_pred(src, context,
                                            enc_states, batch,
-                                           partial)
+                                           partial_pre)
+            # This I need to modify in beam
+            for b, p in zip(beam, partial):
+                b.next_ys[0][0] = p[-1]
         else:
             dec_states = self.model.decoder.init_decoder_state(
                 src, context, enc_states)
