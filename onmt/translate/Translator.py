@@ -199,7 +199,7 @@ class Translator(object):
                 trace[ix] = all_current
         for j, b in enumerate(beam):
             # k holds the chosen beam, y the predictions
-            if partial:
+            if partial and trace[j]:
                 all_current = trace[j]
                 last = trace[j][-1]
             else:
@@ -273,7 +273,7 @@ class Translator(object):
             hyps, attn = [], []
             if partial:
                 prefix = partial[j]
-                prev_attn = pref_attn[:,j,:].data.squeeze()
+                prev_attn = pref_attn[:,j,:].data.squeeze(1)
             else:
                 prefix = []
             for i, (times, k) in enumerate(ks[:n_best]):
@@ -312,7 +312,15 @@ class Translator(object):
 
         dec_out, dec_states, attn, weighted_context = self.model.decoder(
             tgt_in, context, dec_states, context_lengths=src_lengths)
-        return dec_out[1:], dec_states, weighted_context[:,1:], attn['std']
+        # Special case -> only <s> gets fed
+        try:
+            dec_out_ret = dec_out[1:]
+            weighted_context_ret = weighted_context[:, 1:]
+        except:
+            dec_out_ret = None
+            weighted_context_ret = None
+
+        return dec_out_ret, dec_states, weighted_context_ret, attn['std']
 
     def _get_top_k(self, src, context, enc_states, batch, pred, k=5):
         tt = torch.cuda if self.cuda else torch
