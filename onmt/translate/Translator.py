@@ -254,7 +254,6 @@ class Translator(object):
                     target_states[0].append(tstates)
                     target_context[0].append(cstar)
             # Get the top 5 for each time step
-            print(resorted[0])
             res = self._get_top_k(src, context, enc_states,
                                   batch, resorted[0])
             ret["beam"] = res
