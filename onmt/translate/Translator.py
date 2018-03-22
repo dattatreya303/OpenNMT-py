@@ -105,9 +105,10 @@ class Translator(object):
         if partial:
             print("partial in Translator", partial)
             partial_pre = [p[:-1] for p in partial]
-            _, dec_states, __ = self._run_pred(src, context,
-                                           enc_states, batch,
-                                           partial_pre)
+            _, dec_states, __, pref_attn = self._run_pred(src, context,
+                                                          enc_states, batch,
+                                                          partial_pre)
+            # Pref attn is word x batch x source
             # This I need to modify in beam
             for b, p in zip(beam, partial):
                 b.next_ys[0][0] = p[-1]
@@ -179,15 +180,31 @@ class Translator(object):
                 dec_states.beam_update(j, b.get_current_origin(), beam_size)
 
         # (4) Extract sentences from beam.
-        ret = self._from_beam(beam)
-
+        ret = self._from_beam(beam, partial, pref_attn)
 
         # Compute the beam trace
         trace = {}
+        # If we have prefix decoding, add this to beam
+        if partial is not None:
+            for ix in range(len(partial)):
+                all_current = []
+                last = []
+                # Ignore last index, since that is on the beam
+                for wIx in partial[ix][:-1]:
+                    last.append(wIx)
+                    # print("last", last)
+                    all_current.append([last.copy()] * self.beam_size)
+                    # print("ac", all_current)
+                trace[ix] = all_current
         for j, b in enumerate(beam):
             # k holds the chosen beam, y the predictions
-            all_current = []
-            last = []
+            if partial:
+                all_current = trace[j]
+                last = trace[j][-1]
+            else:
+                all_current = []
+                last = []
+
             for ix, cur_tops in enumerate(b.prev_ks):
                 # print("cur_top", cur_tops.numpy())
                 # print("cur_preds", b.next_ys[ix].numpy())
@@ -215,13 +232,18 @@ class Translator(object):
             for topIx in range(self.n_best):
                 cbatch = []
                 for bIx in range(batch.batch_size):
-                    cbatch.append(ret["predictions"][bIx][topIx])
+                    if partial is not None:
+                        cpred = partial[bIx] +  ret["predictions"][bIx][topIx]
+                    else:
+                        cpred = ret["predictions"][bIx][topIx]
+                    cbatch.append(cpred)
+
                 resorted.append(cbatch)
 
             target_states = [[] for predIx in range(batch.batch_size)]
             target_context = [[] for predIx in range(batch.batch_size)]
             for b in resorted:
-                tstates, _, cstar = self._run_pred(src, context, enc_states,
+                tstates, _, cstar, attn = self._run_pred(src, context, enc_states,
                                            batch, b)
                 tstates = tstates.squeeze()
                 cstar = cstar.squeeze()
@@ -243,25 +265,34 @@ class Translator(object):
             ret["target_cstar"] = target_context
         return ret
 
-    def _from_beam(self, beam):
+    def _from_beam(self, beam, partial=None, pref_attn=None):
         ret = {"predictions": [],
                "scores": [],
                "attention": []}
-        for b in beam:
+        for j, b in enumerate(beam):
             n_best = self.n_best
             scores, ks = b.sort_finished(minimum=n_best)
             hyps, attn = [], []
+            if partial is not None:
+                prefix = partial[j]
+                prev_attn = pref_attn[:,j,:].data.squeeze()
+            else:
+                prefix = []
             for i, (times, k) in enumerate(ks[:n_best]):
                 # print(times)
                 # for ix in range(times):
                 #     h, _ = b.get_hyp(ix, k)
                 #     print(h)
                 hyp, att = b.get_hyp(times, k)
-                hyps.append(hyp)
+                if partial is not None:
+                    src_width = att.size(1)
+                    att = torch.cat([prev_attn[:,:src_width], att], dim=0)
+                hyps.append(prefix + hyp)
                 attn.append(att)
             ret["predictions"].append(hyps)
             ret["scores"].append(scores)
             ret["attention"].append(attn)
+        # print(ret)
         return ret
 
     def _run_pred(self, src, context, enc_states, batch, pred):
@@ -283,7 +314,7 @@ class Translator(object):
 
         dec_out, dec_states, attn, weighted_context = self.model.decoder(
             tgt_in, context, dec_states, context_lengths=src_lengths)
-        return dec_out[1:], dec_states, weighted_context[:,1:]
+        return dec_out[1:], dec_states, weighted_context[:,1:], attn['std']
 
     def _get_top_k(self, src, context, enc_states, batch, pred, k=5):
         tt = torch.cuda if self.cuda else torch
