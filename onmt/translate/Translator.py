@@ -51,7 +51,7 @@ class Translator(object):
                 "scores": [],
                 "log_probs": []}
 
-    def translate_batch(self, batch, data, return_states=False, partial=None):
+    def translate_batch(self, batch, data, return_states=False, partial=[]):
         """
         Translate a batch of sentences.
 
@@ -67,9 +67,6 @@ class Translator(object):
         Todo:
            Shouldn't need the original dataset.
         """
-
-        # TODO - @Sebastian: maybe work around better
-        partial = None if partial == [] else partial
 
         # (0) Prep each of the components of the search.
         # And helper method for reducing verbosity.
@@ -189,7 +186,7 @@ class Translator(object):
         # Compute the beam trace
         trace = {}
         # If we have prefix decoding, add this to beam
-        if partial is not None:
+        if partial:
             for ix in range(len(partial)):
                 all_current = []
                 last = []
@@ -267,7 +264,7 @@ class Translator(object):
             ret["target_cstar"] = target_context
         return ret
 
-    def _from_beam(self, beam, partial=None, pref_attn=None):
+    def _from_beam(self, beam, partial=[], pref_attn=None):
         ret = {"predictions": [],
                "scores": [],
                "attention": []}
@@ -275,7 +272,7 @@ class Translator(object):
             n_best = self.n_best
             scores, ks = b.sort_finished(minimum=n_best)
             hyps, attn = [], []
-            if partial is not None:
+            if partial:
                 prefix = partial[j]
                 prev_attn = pref_attn[:,j,:].data.squeeze()
             else:
@@ -286,7 +283,7 @@ class Translator(object):
                 #     h, _ = b.get_hyp(ix, k)
                 #     print(h)
                 hyp, att = b.get_hyp(times, k)
-                if partial is not None:
+                if partial:
                     src_width = att.size(1)
                     att = torch.cat([prev_attn[:,:src_width], att], dim=0)
                 hyps.append(prefix + hyp)
