@@ -236,10 +236,7 @@ class Translator(object):
             for topIx in range(self.n_best):
                 cbatch = []
                 for bIx in range(batch.batch_size):
-                    if partial is not None:
-                        cpred = partial[bIx] +  ret["predictions"][bIx][topIx]
-                    else:
-                        cpred = ret["predictions"][bIx][topIx]
+                    cpred = ret["predictions"][bIx][topIx]
                     cbatch.append(cpred)
 
                 resorted.append(cbatch)
@@ -260,6 +257,7 @@ class Translator(object):
                     target_states[0].append(tstates)
                     target_context[0].append(cstar)
             # Get the top 5 for each time step
+            print(resorted[0])
             res = self._get_top_k(src, context, enc_states,
                                   batch, resorted[0])
             ret["beam"] = res
