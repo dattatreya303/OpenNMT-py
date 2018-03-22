@@ -68,6 +68,9 @@ class Translator(object):
            Shouldn't need the original dataset.
         """
 
+        # TODO - @Sebastian: maybe work around better
+        partial = None if partial == [] else partial
+
         # (0) Prep each of the components of the search.
         # And helper method for reducing verbosity.
         beam_size = self.beam_size
@@ -102,6 +105,7 @@ class Translator(object):
 
         enc_states, context = self.model.encoder(src, src_lengths)
         # If we have partial translation, run decoder over them
+        pref_attn = None  # just in case it's not partial :)
         if partial:
             print("partial in Translator", partial)
             partial_pre = [p[:-1] for p in partial]
