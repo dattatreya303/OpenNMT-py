@@ -365,18 +365,18 @@ class ONMTmodelAPI():
 
 
 def main():
-    model = ONMTmodelAPI("model/date_acc_100.00_ppl_1.00_e7.pt")
-    # model = ONMTmodelAPI("../S2Splay/model_api/processing/s2s_iwslt_ende/baseline-brnn.en-de.s154_acc_61.58_ppl_7.43_e21.pt")
+    # model = ONMTmodelAPI("model/date_acc_100.00_ppl_1.00_e7.pt")
+    model = ONMTmodelAPI("../S2Splay/model_api/processing/s2s_iwslt_ende/baseline-brnn.en-de.s154_acc_61.58_ppl_7.43_e21.pt")
     # reply = model.translate(["This is a test ."])
-    reply = model.translate(["this .",], dump_data=True)
+    reply = model.translate(["this .",], dump_data=False)
     # reply = model.translate(["this .","that"], dump_data=False)
     print("______")
-    # reply = model.translate(["This is a test ."], partial_decode=["Dies ist"])
+    reply = model.translate(["this is a test .", "and a second one .", "and a third"], partial_decode=["dies", 'und', 'und'], dump_data=False)
     # reply = model.translate(["This is a test .", "this is a second test ."],
     #                          partial_decode=["Dies ist", "Ein zweiter"])
-    print(len(reply[0]['decoder']))
-    print(len(reply[0]['decoder'][0]))
-    print(reply[0]['beam_trace'])
+    # print(len(reply[0]['decoder']))
+    # print(len(reply[0]['decoder'][0]))
+    # print(reply[0]['beam_trace'])
 
     #print(json.dumps(reply, indent=2, sort_keys=True))
 
