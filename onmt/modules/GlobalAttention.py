@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from torch.autograd import Variable
 
 from onmt.modules.UtilClass import BottleLinear
 from onmt.Utils import aeq, sequence_mask
@@ -126,7 +127,7 @@ class GlobalAttention(nn.Module):
 
             return self.v(wquh.view(-1, dim)).view(tgt_batch, tgt_len, src_len)
 
-    def forward(self, input, context, context_lengths=None, coverage=None):
+    def forward(self, input, context, context_lengths=None, coverage=None, overwrite=[]):
         """
 
         Args:
@@ -176,7 +177,14 @@ class GlobalAttention(nn.Module):
         # Softmax to normalize attention weights
         align_vectors = self.sm(align.view(batch*targetL, sourceL))
         align_vectors = align_vectors.view(batch, targetL, sourceL)
-
+        if overwrite:
+            # Beams and different sources are round robin'd
+            overwrite = overwrite*int(batch/len(overwrite))
+            for new, current in zip(overwrite, align_vectors.split(1)):
+                if new > -1:
+                    current.fill_(0)
+                    index = Variable(torch.LongTensor([new]))
+                    current.index_fill_(2, index, 1)
         # each context vector c_t is the weighted average
         # over all the source hidden states
         c = torch.bmm(align_vectors, context)

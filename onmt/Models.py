@@ -228,7 +228,7 @@ class RNNDecoderBase(nn.Module):
             )
             self._copy = True
 
-    def forward(self, input, context, state, context_lengths=None):
+    def forward(self, input, context, state, context_lengths=None, attn_overwrite=[]):
         """
         Args:
             input (`LongTensor`): sequences of padded tokens
@@ -256,7 +256,9 @@ class RNNDecoderBase(nn.Module):
 
         # Run the forward pass of the RNN.
         hidden, outputs, attns, coverage, weighted_context = self._run_forward_pass(
-            input, context, state, context_lengths=context_lengths)
+            input, context, state, 
+            context_lengths=context_lengths, 
+            attn_overwrite=attn_overwrite)
 
         # Update the state with the result.
         final_output = outputs[-1]
@@ -305,7 +307,7 @@ class StdRNNDecoder(RNNDecoderBase):
     Implemented without input_feeding and currently with no `coverage_attn`
     or `copy_attn` support.
     """
-    def _run_forward_pass(self, input, context, state, context_lengths=None):
+    def _run_forward_pass(self, input, context, state, context_lengths=None, attn_overwrite=[]):
         """
         Private helper for running the specific RNN forward pass.
         Must be overriden by all subclasses.
@@ -423,7 +425,7 @@ class InputFeedRNNDecoder(RNNDecoderBase):
           G --> H
     """
 
-    def _run_forward_pass(self, input, context, state, context_lengths=None):
+    def _run_forward_pass(self, input, context, state, context_lengths=None, attn_overwrite=[]):
         """
         See StdRNNDecoder._run_forward_pass() for description
         of arguments and return values.
@@ -461,7 +463,8 @@ class InputFeedRNNDecoder(RNNDecoderBase):
             attn_output, attn, weighted_context = self.attn(
                 rnn_output,
                 context.transpose(0, 1),
-                context_lengths=context_lengths)
+                context_lengths=context_lengths,
+                overwrite=attn_overwrite)
             contexts += [weighted_context]
             if self.context_gate is not None:
                 # TODO: context gate should be employed

@@ -5,6 +5,7 @@ import onmt.translate.Beam
 import onmt.io
 
 from copy import deepcopy
+from collections import Counter
 
 
 class Translator(object):
@@ -51,7 +52,7 @@ class Translator(object):
                 "scores": [],
                 "log_probs": []}
 
-    def translate_batch(self, batch, data, return_states=False, partial=[]):
+    def translate_batch(self, batch, data, return_states=False, partial=[], attn_overwrite=[]):
         """
         Translate a batch of sentences.
 
@@ -101,8 +102,11 @@ class Translator(object):
             _, src_lengths = batch.src
 
         enc_states, context = self.model.encoder(src, src_lengths)
+        # prepare for attention overwrite
+        # attn_overwrite = [Counter(a) for a in attn_overwrite]
+        words_so_far = 0
         # If we have partial translation, run decoder over them
-        pref_attn = None  # just in case it's not partial :)
+        pref_attn = None
         if partial:
             print("partial in Translator", partial)
             partial_pre = [p[:-1] for p in partial]
@@ -113,6 +117,9 @@ class Translator(object):
             # This I need to modify in beam
             for b, p in zip(beam, partial):
                 b.next_ys[0][0] = p[-1]
+
+            # Update counter of how many words were already seen
+            words_so_far = len(partial_pre[0]) + 1
         else:
             dec_states = self.model.decoder.init_decoder_state(
                 src, context, enc_states)
@@ -150,9 +157,14 @@ class Translator(object):
             # in the decoder
             inp = inp.unsqueeze(2)
 
+            # Get the current attention overwrite
+            new_attn = [a[words_so_far] if words_so_far in a.keys() else -1 for a in attn_overwrite]
+            if all(a == -1 for a in new_attn):
+                new_attn = []
             # Run one step.
             dec_out, dec_states, attn, weighted_context = self.model.decoder(
-                inp, context, dec_states, context_lengths=context_lengths)
+                inp, context, dec_states, context_lengths=context_lengths,
+                attn_overwrite=new_attn)
 
             dec_out = dec_out.squeeze(0)
             # dec_out: beam x rnn_size
@@ -179,6 +191,9 @@ class Translator(object):
                     out[:, j],
                     unbottle(attn["std"]).data[:, j, :context_lengths[j]])
                 dec_states.beam_update(j, b.get_current_origin(), beam_size)
+
+            # Update seen words
+            words_so_far += 1
 
         # (4) Extract sentences from beam.
         ret = self._from_beam(beam, partial, pref_attn)
