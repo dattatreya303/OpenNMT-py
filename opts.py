@@ -376,6 +376,10 @@ def translate_opts(parser):
     group = parser.add_argument_group('Model')
     group.add_argument('-model', required=True,
                        help='Path to model .pt file')
+    group.add_argument('-constraint_file',
+                       help='File with copy probabilities.')
+    group.add_argument('-threshold', type=float, default=0.5,
+                       help="When to copy and when not to.")
 
     group = parser.add_argument_group('Data')
     group.add_argument('-data_type', default="text",

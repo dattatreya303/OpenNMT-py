@@ -56,7 +56,7 @@ class Translator(object):
                 "scores": [],
                 "log_probs": []}
 
-    def translate_batch(self, batch, data):
+    def translate_batch(self, batch, data, tags):
         """
         Translate a batch of sentences.
 
@@ -82,7 +82,6 @@ class Translator(object):
         # exclusion_list = ["<t>", "</t>", "."]
         exclusion_tokens = set([vocab.stoi[t]
                                 for t in self.ignore_when_blocking])
-
         beam = [onmt.translate.Beam(beam_size, n_best=self.n_best,
                                     cuda=self.cuda,
                                     global_scorer=self.global_scorer,
@@ -150,7 +149,9 @@ class Translator(object):
 
             # Run one step.
             dec_out, dec_states, attn = self.model.decoder(
-                inp, memory_bank, dec_states, memory_lengths=memory_lengths)
+                inp, memory_bank, dec_states,
+                memory_lengths=memory_lengths,
+                tags=tags)
             dec_out = dec_out.squeeze(0)
             # dec_out: beam x rnn_size
 
@@ -163,7 +164,8 @@ class Translator(object):
             else:
                 out = self.model.generator.forward(dec_out,
                                                    attn["copy"].squeeze(0),
-                                                   src_map)
+                                                   src_map,
+                                                   tags=tags)
                 # beam x (tgt_vocab + extra_vocab)
                 out = data.collapse_copy_scores(
                     unbottle(out.data),

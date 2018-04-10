@@ -5,6 +5,7 @@ import os
 import argparse
 import math
 import codecs
+import json
 import torch
 
 from itertools import count
@@ -107,32 +108,41 @@ def main():
         data, translator.fields,
         opt.n_best, opt.replace_unk, opt.tgt)
 
+
+
     # Statistics
     counter = count(1)
     pred_score_total, pred_words_total = 0, 0
     gold_score_total, gold_words_total = 0, 0
+    import json
+    with codecs.open(opt.constraint_file, "r") as f:
+        for batch, constraint in zip(data_iter, f):
+            con = json.loads(constraint)
+            words = con['words']
+            # print("len words", len(words))
+            probs = [p[1] for p in con['class_probabilities'][:len(words)]]
+            tags = [1 if p > opt.threshold else 0 for p in probs]
 
-    for batch in data_iter:
-        batch_data = translator.translate_batch(batch, data)
-        translations = builder.from_batch(batch_data)
+            batch_data = translator.translate_batch(batch, data, tags)
+            translations = builder.from_batch(batch_data)
 
-        for trans in translations:
-            pred_score_total += trans.pred_scores[0]
-            pred_words_total += len(trans.pred_sents[0])
-            if opt.tgt:
-                gold_score_total += trans.gold_score
-                gold_words_total += len(trans.gold_sent) + 1
+            for trans in translations:
+                pred_score_total += trans.pred_scores[0]
+                pred_words_total += len(trans.pred_sents[0])
+                if opt.tgt:
+                    gold_score_total += trans.gold_score
+                    gold_words_total += len(trans.gold_sent) + 1
 
-            n_best_preds = [" ".join(pred)
-                            for pred in trans.pred_sents[:opt.n_best]]
-            out_file.write('\n'.join(n_best_preds))
-            out_file.write('\n')
-            out_file.flush()
+                n_best_preds = [" ".join(pred)
+                                for pred in trans.pred_sents[:opt.n_best]]
+                out_file.write('\n'.join(n_best_preds))
+                out_file.write('\n')
+                out_file.flush()
 
-            if opt.verbose:
-                sent_number = next(counter)
-                output = trans.log(sent_number)
-                os.write(1, output.encode('utf-8'))
+                if opt.verbose:
+                    sent_number = next(counter)
+                    output = trans.log(sent_number)
+                    os.write(1, output.encode('utf-8'))
 
     _report_score('PRED', pred_score_total, pred_words_total)
     if opt.tgt:

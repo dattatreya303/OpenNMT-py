@@ -2,6 +2,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch
 import torch.cuda
+from torch.autograd import Variable
 
 import onmt
 import onmt.io
@@ -64,7 +65,7 @@ class CopyGenerator(nn.Module):
         self.linear_copy = nn.Linear(input_size, 1)
         self.tgt_dict = tgt_dict
 
-    def forward(self, hidden, attn, src_map):
+    def forward(self, hidden, attn, src_map, tags=[]):
         """
         Compute a distribution over the target dictionary
         extended by the dynamic dictionary implied by compying
@@ -95,6 +96,15 @@ class CopyGenerator(nn.Module):
         # Probibility of not copying: p_{word}(w) * (1 - p(z))
         out_prob = torch.mul(prob,  1 - p_copy.expand_as(prob))
         mul_attn = torch.mul(attn, p_copy.expand_as(attn))
+
+        # Mask out the non copied words
+        # print("mulsize", mul_attn.size())
+
+        tags = Variable(torch.Tensor(tags))
+        # print(tags.size())
+        tags = tags.expand_as(attn)
+        mul_attn = torch.mul(mul_attn, tags)
+
         copy_prob = torch.bmm(mul_attn.view(-1, batch, slen)
                               .transpose(0, 1),
                               src_map.transpose(0, 1)).transpose(0, 1)

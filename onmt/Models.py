@@ -282,7 +282,7 @@ class RNNDecoderBase(nn.Module):
             self._copy = True
         self._reuse_copy_attn = reuse_copy_attn
 
-    def forward(self, tgt, memory_bank, state, memory_lengths=None):
+    def forward(self, tgt, memory_bank, state, memory_lengths=None, tags=[]):
         """
         Args:
             tgt (`LongTensor`): sequences of padded tokens
@@ -310,7 +310,9 @@ class RNNDecoderBase(nn.Module):
 
         # Run the forward pass of the RNN.
         decoder_final, decoder_outputs, attns = self._run_forward_pass(
-            tgt, memory_bank, state, memory_lengths=memory_lengths)
+            tgt, memory_bank, state,
+            memory_lengths=memory_lengths,
+            tags=tags)
 
         # Update the state with the result.
         final_output = decoder_outputs[-1]
@@ -458,7 +460,7 @@ class InputFeedRNNDecoder(RNNDecoderBase):
           G --> H
     """
 
-    def _run_forward_pass(self, tgt, memory_bank, state, memory_lengths=None):
+    def _run_forward_pass(self, tgt, memory_bank, state, memory_lengths=None, tags=[]):
         """
         See StdRNNDecoder._run_forward_pass() for description
         of arguments and return values.
