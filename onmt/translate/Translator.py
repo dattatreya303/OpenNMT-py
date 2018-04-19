@@ -91,7 +91,8 @@ class Translator(object):
                                     min_length=self.min_length,
                                     stepwise_penalty=self.stepwise_penalty,
                                     block_ngram_repeat=self.block_ngram_repeat,
-                                    exclusion_tokens=exclusion_tokens)
+                                    exclusion_tokens=exclusion_tokens,
+                                    dot_token=vocab.stoi["."])
                 for __ in range(batch_size)]
 
         # Help functions for working with beams and batches
@@ -150,8 +151,7 @@ class Translator(object):
             # Run one step.
             dec_out, dec_states, attn = self.model.decoder(
                 inp, memory_bank, dec_states,
-                memory_lengths=memory_lengths,
-                tags=tags)
+                memory_lengths=memory_lengths)
             dec_out = dec_out.squeeze(0)
             # dec_out: beam x rnn_size
 

@@ -100,10 +100,11 @@ class CopyGenerator(nn.Module):
         # Mask out the non copied words
         # print("mulsize", mul_attn.size())
 
-        tags = Variable(torch.Tensor(tags))
+        tags = Variable(torch.cuda.FloatTensor(tags))
         # print(tags.size())
         tags = tags.expand_as(attn)
-        mul_attn = torch.mul(mul_attn, tags)
+        # Avg the probs
+        mul_attn = torch.mul(mul_attn, tags) * 2
 
         copy_prob = torch.bmm(mul_attn.view(-1, batch, slen)
                               .transpose(0, 1),
