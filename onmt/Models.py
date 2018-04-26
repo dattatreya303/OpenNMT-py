@@ -589,7 +589,7 @@ class NMTModel(nn.Module):
         enc_final, memory_bank = self.encoder(src, lengths)
 
         # Use memory_bank to compute tags
-        tags = self.tagger(memory_bank)
+        tags = None
 
         enc_state = \
             self.decoder.init_decoder_state(src, memory_bank, enc_final)
