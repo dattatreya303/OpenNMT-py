@@ -4,6 +4,9 @@ from torch.autograd import Variable
 import onmt.translate.Beam
 import onmt.io
 
+from copy import deepcopy
+from collections import Counter
+
 
 class Translator(object):
     """
@@ -38,6 +41,8 @@ class Translator(object):
         self.cuda = cuda
         self.min_length = min_length
 
+        self.model.eval()
+
         # for debugging
         self.beam_accum = None
         if beam_trace:
@@ -47,7 +52,7 @@ class Translator(object):
                 "scores": [],
                 "log_probs": []}
 
-    def translate_batch(self, batch, data, return_states=False, partial=None):
+    def translate_batch(self, batch, data, return_states=False, partial=[], attn_overwrite=[]):
         """
         Translate a batch of sentences.
 
@@ -97,11 +102,24 @@ class Translator(object):
             _, src_lengths = batch.src
 
         enc_states, context = self.model.encoder(src, src_lengths)
+        # prepare for attention overwrite
+        # attn_overwrite = [Counter(a) for a in attn_overwrite]
+        words_so_far = 0
         # If we have partial translation, run decoder over them
+        pref_attn = None
         if partial:
-            _, dec_states, __ = self._run_pred(src, context,
-                                           enc_states, batch,
-                                           partial)
+            print("partial in Translator", partial)
+            partial_pre = [p[:-1] for p in partial]
+            _, dec_states, __, pref_attn = self._run_pred(src, context,
+                                                          enc_states, batch,
+                                                          partial_pre)
+            # Pref attn is word x batch x source
+            # This I need to modify in beam
+            for b, p in zip(beam, partial):
+                b.next_ys[0][0] = p[-1]
+
+            # Update counter of how many words were already seen
+            words_so_far = len(partial_pre[0]) + 1
         else:
             dec_states = self.model.decoder.init_decoder_state(
                 src, context, enc_states)
@@ -139,9 +157,14 @@ class Translator(object):
             # in the decoder
             inp = inp.unsqueeze(2)
 
+            # Get the current attention overwrite
+            new_attn = [a[words_so_far] if words_so_far in a.keys() else -1 for a in attn_overwrite]
+            if all(a == -1 for a in new_attn):
+                new_attn = []
             # Run one step.
             dec_out, dec_states, attn, weighted_context = self.model.decoder(
-                inp, context, dec_states, context_lengths=context_lengths)
+                inp, context, dec_states, context_lengths=context_lengths,
+                attn_overwrite=new_attn)
 
             dec_out = dec_out.squeeze(0)
             # dec_out: beam x rnn_size
@@ -169,8 +192,46 @@ class Translator(object):
                     unbottle(attn["std"]).data[:, j, :context_lengths[j]])
                 dec_states.beam_update(j, b.get_current_origin(), beam_size)
 
+            # Update seen words
+            words_so_far += 1
+
         # (4) Extract sentences from beam.
-        ret = self._from_beam(beam)
+        ret = self._from_beam(beam, partial, pref_attn)
+
+        # Compute the beam trace
+        trace = {}
+        # If we have prefix decoding, add this to beam
+        if partial:
+            for ix in range(len(partial)):
+                all_current = []
+                last = []
+                # Ignore last index, since that is on the beam
+                for wIx in partial[ix][:-1]:
+                    last.append(wIx)
+                    # print("last", last)
+                    all_current.append([last.copy()] * self.beam_size)
+                    # print("ac", all_current)
+                trace[ix] = all_current
+        for j, b in enumerate(beam):
+            # k holds the chosen beam, y the predictions
+            if partial and trace[j]:
+                all_current = trace[j]
+                last = trace[j][-1]
+            else:
+                all_current = []
+                last = []
+
+            for ix, cur_tops in enumerate(b.prev_ks):
+                # print("cur_top", cur_tops.numpy())
+                # print("cur_preds", b.next_ys[ix].numpy())
+                if not last:
+                    last = [[b.next_ys[0][k]] for k in cur_tops]
+                else:
+                    last = [last[b.prev_ks[ix][a]] + [b.next_ys[ix][k]] for a, k
+                            in enumerate(cur_tops)]
+                all_current.append(last)
+            trace[j] = all_current
+
         ret["gold_score"] = [0] * batch_size
         if "tgt" in batch.__dict__:
             ret["gold_score"] = self._run_target(batch, data)
@@ -187,16 +248,19 @@ class Translator(object):
             for topIx in range(self.n_best):
                 cbatch = []
                 for bIx in range(batch.batch_size):
-                    cbatch.append(ret["predictions"][bIx][topIx])
+                    cpred = ret["predictions"][bIx][topIx]
+                    cbatch.append(cpred)
+
                 resorted.append(cbatch)
 
             target_states = [[] for predIx in range(batch.batch_size)]
             target_context = [[] for predIx in range(batch.batch_size)]
             for b in resorted:
-                tstates, _, cstar = self._run_pred(src, context, enc_states,
+                tstates, _, cstar, attn = self._run_pred(src, context, enc_states,
                                            batch, b)
                 tstates = tstates.squeeze()
                 cstar = cstar.squeeze()
+
                 if batch.batch_size > 1:
                     for predIx in range(batch.batch_size):
                         target_states[predIx].append(tstates[:,predIx,:].squeeze())
@@ -204,25 +268,44 @@ class Translator(object):
                 else:
                     target_states[0].append(tstates)
                     target_context[0].append(cstar)
+            # Get the top 5 for each time step
+            res = self._get_top_k(src, context, enc_states,
+                                  batch, resorted[0])
+            ret["beam"] = res
+            ret["beam_trace"] = trace
+
             ret["target_states"] = target_states
             ret["target_cstar"] = target_context
         return ret
 
-    def _from_beam(self, beam):
+    def _from_beam(self, beam, partial=[], pref_attn=None):
         ret = {"predictions": [],
                "scores": [],
                "attention": []}
-        for b in beam:
+        for j, b in enumerate(beam):
             n_best = self.n_best
             scores, ks = b.sort_finished(minimum=n_best)
             hyps, attn = [], []
+            if partial:
+                prefix = partial[j]
+                prev_attn = pref_attn[:,j,:].data.squeeze(1)
+            else:
+                prefix = []
             for i, (times, k) in enumerate(ks[:n_best]):
+                # print(times)
+                # for ix in range(times):
+                #     h, _ = b.get_hyp(ix, k)
+                #     print(h)
                 hyp, att = b.get_hyp(times, k)
-                hyps.append(hyp)
+                if partial:
+                    src_width = att.size(1)
+                    att = torch.cat([prev_attn[:,:src_width], att], dim=0)
+                hyps.append(prefix + hyp)
                 attn.append(att)
             ret["predictions"].append(hyps)
             ret["scores"].append(scores)
             ret["attention"].append(attn)
+        # print(ret)
         return ret
 
     def _run_pred(self, src, context, enc_states, batch, pred):
@@ -234,6 +317,7 @@ class Translator(object):
         for p in pred:
             while len(p) < max_len:
                 p.append(tgt_pad)
+            p = [self.fields["tgt"].vocab.stoi[onmt.io.BOS_WORD]] + p
             pred_in.append(tt.LongTensor(p).unsqueeze(1))
         tgt_in = Variable(torch.stack(pred_in, 1))
 
@@ -243,7 +327,96 @@ class Translator(object):
 
         dec_out, dec_states, attn, weighted_context = self.model.decoder(
             tgt_in, context, dec_states, context_lengths=src_lengths)
-        return dec_out, dec_states, weighted_context
+        # Special case -> only <s> gets fed
+        try:
+            dec_out_ret = dec_out[1:]
+            weighted_context_ret = weighted_context[:, 1:]
+        except:
+            dec_out_ret = None
+            weighted_context_ret = None
+
+        return dec_out_ret, dec_states, weighted_context_ret, attn['std']
+
+    def _get_top_k(self, src, context, enc_states, batch, pred, k=5):
+        tt = torch.cuda if self.cuda else torch
+        tgt_pad = self.fields["tgt"].vocab.stoi[onmt.io.PAD_WORD]
+        max_len = len(max(pred, key=len))
+        context = context[:, :batch.batch_size, :]
+        pred_in = []
+        for p in pred:
+            while len(p) < max_len:
+                p.append(tgt_pad)
+            p = [self.fields["tgt"].vocab.stoi[onmt.io.BOS_WORD]] + p[:-2]
+            pred_in.append(tt.LongTensor(p).unsqueeze(1))
+        tgt_in = Variable(torch.stack(pred_in, 1))
+        dec_states = self.model.decoder.init_decoder_state(
+            src, context, enc_states)
+        _, src_lengths = batch.src
+
+        dec_out, dec_states, _, __ = self.model.decoder(
+            tgt_in, context, dec_states, context_lengths=src_lengths)
+
+        alt_preds = []
+        alt_scores = []
+        for ix, dec in enumerate(dec_out):
+            out = self.model.generator.forward(dec)
+            # each o is a different prediction
+            alt = []
+            alt_s = []
+            for o in out:
+                o = o.view(-1)
+                best_scores, best_scores_id = o.squeeze().topk(k, 0, True, True)
+                alt.append(best_scores_id.data)
+                alt_s.append(best_scores.data)
+
+                # print(best_scores.data, best_scores_id.data)
+            alt_preds.append(alt)
+            alt_scores.append(alt_s)
+
+        # Construct new inputs
+        out_states = []
+        dec_states = self.model.decoder.init_decoder_state(
+                    src, context, enc_states)
+        for ix, t in enumerate(tgt_in.data):
+            alt = torch.stack(alt_preds[ix]).view(k, -1).unsqueeze(2)
+            prev = tgt_in.data[:ix+1]
+            # Precompute initial state
+            dec_out, dec_states, _, __ = self.model.decoder(
+                tgt_in[ix].unsqueeze(0), context, dec_states, context_lengths=src_lengths)
+            fix_dec_states = deepcopy(dec_states)
+            c_out = []
+            for ix2, a in enumerate(alt):
+                # Forward the latest tokens
+                d_out, d_states, _, __ = self.model.decoder(
+                    Variable(a.unsqueeze(0)), context, fix_dec_states, context_lengths=src_lengths)
+                c_out.append(d_out.data)
+                # write these into the correct positions d_out -> in decoder states one per step
+            out_states.append(c_out)
+
+
+        # Assemble reply
+        res = {ix:[] for ix in range(tgt_in.size(1))}
+        # Iterate over time steps
+        for targ, stat, pred, sco in zip(tgt_in, out_states, alt_preds, alt_scores):
+
+            # Iterate over batch
+            for ix, t in enumerate(targ):
+                outs = []
+                # ignore padding in here
+
+                if t.data[0] == tgt_pad \
+                   or t.data[0] == self.fields["tgt"].vocab.stoi[onmt.io.EOS_WORD] \
+                   or t.data[0] == self.fields["tgt"].vocab.stoi["."]:
+                    continue
+                current_state = [list(s[:,ix,:].squeeze().numpy()) for s in stat]
+                for pr, sc, st in zip(list(pred[ix].numpy()), list(sco[ix].numpy()), current_state):
+                    current_dic = {"pred": pr,
+                                   "score": sc,
+                                   "state": st}
+                    outs.append(current_dic)
+
+                res[ix].append(outs)
+        return res
 
     def _run_target(self, batch, data):
         data_type = data.data_type

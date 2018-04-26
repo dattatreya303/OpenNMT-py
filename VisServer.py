@@ -244,7 +244,7 @@ class ONMTmodelAPI():
             beam_trace=self.opt.dump_beam != "")
 
 
-    def translate(self, in_text, partial_decode=[], k=5, attn=None, dump_data=False):
+    def translate(self, in_text, partial_decode=[], attn_overwrite=[], k=5, attn=None, dump_data=False):
         """
         in_text: list of strings
         partial_decode: list of strings, not implemented yet
@@ -319,7 +319,7 @@ class ONMTmodelAPI():
         for batch in test_data:
             batch_data = self.translator.translate_batch(
                 batch, data, return_states=True,
-                partial=partial)
+                partial=partial, attn_overwrite=attn_overwrite)
             translations = builder.from_batch(batch_data)
             # iteratres over items in batch
             for transIx, trans in enumerate(translations):
@@ -358,22 +358,43 @@ class ONMTmodelAPI():
                 res['scores'] = list(np.array(trans.pred_scores))[:k]
                 res['decoder'] = decoderRes
                 res['attn'] = attnRes
+                res['beam'] = batch_data['beam'][transIx]
+                res['beam_trace'] = batch_data['beam_trace'][transIx]
                 reply[transIx] = res
         return reply
 
 
 def main():
-    # model = ONMTmodelAPI("../S2SPlay/model_api/data/model_en_de_20.49.pt")
-    model = ONMTmodelAPI("./baseline-brnn2.s131_acc_62.71_ppl_7.74_e20.pt")
-    # reply = model.translate(["This is a test ."])
-    reply = model.translate(["This", "That"], dump_data=True)
-    print("______")
-    # reply = model.translate(["This is a test ."], partial_decode=["Dies ist"])
+    # model = ONMTmodelAPI("model/date_acc_100.00_ppl_1.00_e7.pt")
+    model = ONMTmodelAPI("../S2Splay/model_api/processing/s2s_iwslt_ende/baseline-brnn.en-de.s154_acc_61.58_ppl_7.43_e21.pt")
+    # Simple Case
+    reply = model.translate(["This is a test ."], dump_data=True)
+    # Case with attn overwrite OR partial
+    reply = model.translate(["this is madness ."], attn_overwrite=[{2:0}])
+    # reply = model.translate(["this is madness ."], partial_decode=["das ist"])
+    # Complex Case with attn and partial
+    # reply = model.translate(["this is madness ."],
+    #                         attn_overwrite=[{2:0}],
+    #                         partial_decode=["das ist"])
+
+    # Cases with multiple
+    # reply = model.translate(["This is a test .", "and another one ."])
+    # Partial
     # reply = model.translate(["This is a test .", "this is a second test ."],
     #                          partial_decode=["Dies ist", "Ein zweiter"])
+    # Attn overwrite
+    # reply = model.translate(["this is madness .", "i am awesome ."],
+    #                         attn_overwrite=[{2:0}, {}])
+    # All together - phew
+    # reply = model.translate(["this is madness .", "i am awesome ."],
+    #                         partial_decode=["heute ist", "du bist"],
+    #                         attn_overwrite=[{2:0}, {2:2}])
 
-    # print(reply)
-
+    # Debug options
+    # print("______")
+    # print(len(reply[0]['decoder']))
+    # print(len(reply[0]['decoder'][0]))
+    # print(reply[0]['beam_trace'])
     #print(json.dumps(reply, indent=2, sort_keys=True))
 
 if __name__ == "__main__":
