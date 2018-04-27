@@ -95,17 +95,21 @@ class CopyGenerator(nn.Module):
         p_copy = F.sigmoid(self.linear_copy(hidden))
         # Probibility of not copying: p_{word}(w) * (1 - p(z))
         out_prob = torch.mul(prob,  1 - p_copy.expand_as(prob))
-        mul_attn = torch.mul(attn, p_copy.expand_as(attn))
+        tags = Variable(torch.cuda.FloatTensor(tags))
+        mul_attn = torch.mul(attn, tags) * 2
+        
+        # Renormalize here? 
+        # mul_sum = mul_attn.sum(1)
+        # mul_attn = torch.div(mul_attn, mul_sum.unsqueeze(1).expand_as(mul_attn))
+        # Add in the copy probability
+        mul_attn = torch.mul(mul_attn, p_copy.expand_as(attn))
 
         # Mask out the non copied words
         # print("mulsize", mul_attn.size())
 
-        tags = Variable(torch.cuda.FloatTensor(tags))
         # print(tags.size())
         tags = tags.expand_as(attn)
         # Avg the probs
-        mul_attn = torch.mul(mul_attn, tags)
-
         copy_prob = torch.bmm(mul_attn.view(-1, batch, slen)
                               .transpose(0, 1),
                               src_map.transpose(0, 1)).transpose(0, 1)
