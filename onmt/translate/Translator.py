@@ -92,7 +92,7 @@ class Translator(object):
                                     stepwise_penalty=self.stepwise_penalty,
                                     block_ngram_repeat=self.block_ngram_repeat,
                                     exclusion_tokens=exclusion_tokens,
-                                    dot_token=vocab.stoi["."])
+                                    dot_token=vocab.stoi["</t>"])
                 for __ in range(batch_size)]
 
         # Help functions for working with beams and batches
