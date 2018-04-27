@@ -185,12 +185,11 @@ class CopyGeneratorLossCompute(onmt.Loss.LossComputeBase):
             "target": batch.tgt[range_[0] + 1: range_[1]],
             "copy_attn": attns.get("copy"),
             "align": batch.alignment[range_[0] + 1: range_[1]],
-            "tags": tags,
             "tag_labels": tag_labels,
             "copy_align": align
         }
 
-    def _compute_loss(self, batch, output, target, copy_attn, align, tag_labels, tags, copy_align):
+    def _compute_loss(self, batch, output, target, copy_attn, align, tag_labels, copy_align):
         """
         Compute the loss. The args must match self._make_shard_state().
         Args:
@@ -206,18 +205,18 @@ class CopyGeneratorLossCompute(onmt.Loss.LossComputeBase):
         # Copy alignment is tgt x batch x src
         src_len = copy_attn.shape[2]
         tag_labels = tag_labels[:src_len]
-        # ftags = tag_labels.view(-1, copy_attn.shape[-1])\
-        #                        .unsqueeze(0)\
-        #                        .expand_as(copy_attn)\
-                               # .contiguous()
-        # log_mask = torch.log(ftags)
+        ftags = tag_labels.view(-1, copy_attn.shape[-1])\
+                          .unsqueeze(0)\
+                          .expand_as(copy_attn)\
+                          .contiguous()
+        log_mask = torch.log(ftags)
 
-        ftags = tags[:,:,1].contiguous()\
-                           .view(-1, copy_attn.shape[-1])\
-                           .unsqueeze(0)\
-                           .expand_as(copy_attn)\
-                           .contiguous()
-        log_mask = ftags
+        #ftags = tags[:,:,1].contiguous()\
+        #                   .view(-1, copy_attn.shape[-1])\
+        #                   .unsqueeze(0)\
+        #                   .expand_as(copy_attn)\
+        #                   .contiguous()
+        #log_mask = ftags
 
         #print("ftags", ftags.shape)
         # ftags.detach_()
@@ -268,18 +267,18 @@ class CopyGeneratorLossCompute(onmt.Loss.LossComputeBase):
             loss = loss.sum()
 
         # Compute Tag Loss Term
-        tags = tags.view(-1, 2)
-        tag_labels = tag_labels.view(-1).long()
-        tagging_loss, mask = self.tag_criterion(tags, tag_labels, batch.src[1])
-        if self.normalize_by_length:
-            tagging_loss = tagging_loss.view(-1, batch.batch_size).sum(0)
-            tagging_loss = torch.div(tagging_loss, Variable(batch.src[1].float())).sum()
-        else:
-            tagging_loss = tagging_loss.sum()
+        #tags = tags.view(-1, 2)
+        #tag_labels = tag_labels.view(-1).long()
+        #tagging_loss, mask = self.tag_criterion(tags, tag_labels, batch.src[1])
+        #if self.normalize_by_length:
+        #    tagging_loss = tagging_loss.view(-1, batch.batch_size).sum(0)
+        #    tagging_loss = torch.div(tagging_loss, Variable(batch.src[1].float())).sum()
+        #else:
+        #    tagging_loss = tagging_loss.sum()
 
-        print("Tagging Loss {:.3f} Loss: {:.3f}".format(tagging_loss.data[0], loss.data[0]))
-        for s,t in zip(tag_labels[:10], tags[:10]):
-            print("{} {:.2f}".format(s.data[0],t.exp().data[1]))
+        #print("Tagging Loss {:.3f} Loss: {:.3f}".format(tagging_loss.data[0], loss.data[0]))
+        #for s,t in zip(tag_labels[:10], tags[:10]):
+        #    print("{} {:.2f}".format(s.data[0],t.exp().data[1]))
 
-        loss = tagging_loss + loss
+        # loss = tagging_loss + loss
         return loss, stats

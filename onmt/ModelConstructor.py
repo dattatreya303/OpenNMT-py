@@ -167,9 +167,9 @@ def make_base_model(model_opt, fields, gpu, checkpoint=None):
                                model_opt.window_size)
 
 
-    tagger = Tagger(model_opt.rnn_type,
-                    model_opt.rnn_size,
-                    model_opt.dropout)
+    #tagger = Tagger(model_opt.rnn_type,
+    #                model_opt.rnn_size,
+    #                model_opt.dropout)
 
     # Make decoder.
     tgt_dict = fields["tgt"].vocab
@@ -189,7 +189,7 @@ def make_base_model(model_opt, fields, gpu, checkpoint=None):
     decoder = make_decoder(model_opt, tgt_embeddings)
 
     # Make NMTModel(= encoder + decoder).
-    model = NMTModel(encoder, decoder, tagger)
+    model = NMTModel(encoder, decoder, None)
     model.model_type = model_opt.model_type
 
     # Make Generator.
