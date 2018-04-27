@@ -104,7 +104,7 @@ class CopyGenerator(nn.Module):
         # print(tags.size())
         tags = tags.expand_as(attn)
         # Avg the probs
-        mul_attn = torch.mul(mul_attn, tags) * 2
+        mul_attn = torch.mul(mul_attn, tags)
 
         copy_prob = torch.bmm(mul_attn.view(-1, batch, slen)
                               .transpose(0, 1),
