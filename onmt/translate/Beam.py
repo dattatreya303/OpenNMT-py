@@ -129,7 +129,7 @@ class Beam(object):
                 if self.next_ys[-1][j] == self._dot:
                     hyp, _ = self.get_hyp(le-1, j)
                     num_sents = sum([1 for t in hyp if t==self._dot]) 
-                    if num_sents < 3:
+                    if num_sents < 2:
                         word_probs[j][self._eos] = -1e20 
         else:
             beam_scores = word_probs[0]
@@ -152,7 +152,7 @@ class Beam(object):
             if self.next_ys[-1][i] == self._eos:
                 hyp, _ = self.get_hyp(len(self.next_ys)-1, i)
                 num_sents = sum([1 for t in hyp if t==self._dot])
-                if num_sents > 2:
+                if num_sents > 0:
                     global_scores = self.global_scorer.score(self, self.scores)
                     s = global_scores[i]
                     self.finished.append((s, len(self.next_ys) - 1, i))
