@@ -10,7 +10,8 @@ import torch
 import torchtext
 
 from onmt.Utils import aeq
-from onmt.io.DatasetBase import ONMTDatasetBase, PAD_WORD, BOS_WORD, EOS_WORD
+from onmt.io.DatasetBase import (ONMTDatasetBase, UNK_WORD,
+                                 PAD_WORD, BOS_WORD, EOS_WORD)
 
 
 class TextDataset(ONMTDatasetBase):
@@ -66,13 +67,21 @@ class TextDataset(ONMTDatasetBase):
         out_fields = [(k, fields[k]) if k in fields else (k, None)
                       for k in keys]
         example_values = ([ex[k] for k in keys] for ex in examples_iter)
-        out_examples = (self._construct_example_fromlist(
-                            ex_values, out_fields)
-                        for ex_values in example_values)
+
         # If out_examples is a generator, we need to save the filter_pred
         # function in serialization too, which would cause a problem when
         # `torch.save()`. Thus we materialize it as a list.
-        out_examples = list(out_examples)
+        src_size = 0
+
+        out_examples = []
+        for ex_values in example_values:
+            example = self._construct_example_fromlist(
+                ex_values, out_fields)
+            src_size += len(example.src)
+            out_examples.append(example)
+
+        print("average src size", src_size / len(out_examples),
+              len(out_examples))
 
         def filter_pred(example):
             return 0 < len(example.src) <= src_seq_length \
@@ -86,6 +95,10 @@ class TextDataset(ONMTDatasetBase):
 
     def sort_key(self, ex):
         """ Sort using length of source sentences. """
+        # Default to a balanced sort, prioritizing tgt len match.
+        # TODO: make this configurable.
+        if hasattr(ex, "tgt"):
+            return len(ex.src), len(ex.tgt)
         return len(ex.src)
 
     @staticmethod
@@ -97,14 +110,22 @@ class TextDataset(ONMTDatasetBase):
         """
         offset = len(tgt_vocab)
         for b in range(batch.batch_size):
+            blank = []
+            fill = []
             index = batch.indices.data[b]
             src_vocab = src_vocabs[index]
             for i in range(1, len(src_vocab)):
                 sw = src_vocab.itos[i]
                 ti = tgt_vocab.stoi[sw]
                 if ti != 0:
-                    scores[:, b, ti] += scores[:, b, offset + i]
-                    scores[:, b, offset + i].fill_(1e-20)
+                    blank.append(offset + i)
+                    fill.append(ti)
+            if blank:
+                blank = torch.Tensor(blank).type_as(batch.indices.data)
+                fill = torch.Tensor(fill).type_as(batch.indices.data)
+                scores[:, b].index_add_(1, fill,
+                                        scores[:, b].index_select(1, blank))
+                scores[:, b].index_fill_(1, blank, 1e-10)
         return scores
 
     @staticmethod
@@ -251,7 +272,8 @@ class TextDataset(ONMTDatasetBase):
     def _dynamic_dict(self, examples_iter):
         for example in examples_iter:
             src = example["src"]
-            src_vocab = torchtext.vocab.Vocab(Counter(src))
+            src_vocab = torchtext.vocab.Vocab(Counter(src),
+                                              specials=[UNK_WORD, PAD_WORD])
             self.src_vocabs.append(src_vocab)
             # Mapping source tokens to indices in the dynamic dict.
             src_map = torch.LongTensor([src_vocab.stoi[w] for w in src])
@@ -260,7 +282,7 @@ class TextDataset(ONMTDatasetBase):
             if "tgt" in example:
                 tgt = example["tgt"]
                 mask = torch.LongTensor(
-                        [0] + [src_vocab.stoi[w] for w in tgt] + [0])
+                    [0] + [src_vocab.stoi[w] for w in tgt] + [0])
                 example["alignment"] = mask
             yield example
 

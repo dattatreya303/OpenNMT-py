@@ -3,18 +3,19 @@ import copy
 import unittest
 import glob
 import os
+import codecs
 from collections import Counter
 
 import torchtext
 
 import onmt
 import onmt.io
-import opts
+import onmt.opts
 import preprocess
 
 
 parser = argparse.ArgumentParser(description='preprocess.py')
-opts.preprocess_opts(parser)
+onmt.opts.preprocess_opts(parser)
 
 
 SAVE_DATA_PREFIX = 'data/test_preprocess'
@@ -39,6 +40,13 @@ class TestData(unittest.TestCase):
     def dataset_build(self, opt):
         fields = onmt.io.get_fields("text", 0, 0)
 
+        if hasattr(opt, 'src_vocab') and len(opt.src_vocab) > 0:
+            with codecs.open(opt.src_vocab, 'w', 'utf-8') as f:
+                f.write('a\nb\nc\nd\ne\nf\n')
+        if hasattr(opt, 'tgt_vocab') and len(opt.tgt_vocab) > 0:
+            with codecs.open(opt.tgt_vocab, 'w', 'utf-8') as f:
+                f.write('a\nb\nc\nd\ne\nf\n')
+
         train_data_files = preprocess.build_save_dataset('train', fields, opt)
 
         preprocess.build_save_vocab(train_data_files, fields, opt)
@@ -48,6 +56,10 @@ class TestData(unittest.TestCase):
         # Remove the generated *pt files.
         for pt in glob.glob(SAVE_DATA_PREFIX + '*.pt'):
             os.remove(pt)
+        if hasattr(opt, 'src_vocab') and os.path.exists(opt.src_vocab):
+            os.remove(opt.src_vocab)
+        if hasattr(opt, 'tgt_vocab') and os.path.exists(opt.tgt_vocab):
+            os.remove(opt.tgt_vocab)
 
     def test_merge_vocab(self):
         va = torchtext.vocab.Vocab(Counter('abbccc'))
@@ -57,8 +69,8 @@ class TestData(unittest.TestCase):
 
         self.assertEqual(Counter({'c': 6, 'b': 4, 'a': 2, 'e': 2, 'f': 1}),
                          merged.freqs)
-        # 3 specicials + 2 words (since we pass 2 to merge_vocabs)
-        self.assertEqual(5, len(merged.itos))
+        # 4 specicials + 2 words (since we pass 2 to merge_vocabs)
+        self.assertEqual(6, len(merged.itos))
         self.assertTrue('b' in merged.itos)
 
 
@@ -107,13 +119,17 @@ test_databuild = [[],
                   [('share_vocab', True)],
                   [('dynamic_dict', True),
                    ('share_vocab', True)],
+                  [('dynamic_dict', True),
+                   ('max_shard_size', 500000)],
+                  [('src_vocab', '/tmp/src_vocab.txt'),
+                   ('tgt_vocab', '/tmp/tgt_vocab.txt')],
                   ]
 
 for p in test_databuild:
     _add_test(p, 'dataset_build')
 
 # Test image preprocessing
-for p in test_databuild:
+for p in copy.deepcopy(test_databuild):
     p.append(('data_type', 'img'))
     p.append(('src_dir', '/tmp/im2text/images'))
     p.append(('train_src', '/tmp/im2text/src-train-head.txt'))
@@ -123,7 +139,7 @@ for p in test_databuild:
     _add_test(p, 'dataset_build')
 
 # Test audio preprocessing
-for p in test_databuild:
+for p in copy.deepcopy(test_databuild):
     p.append(('data_type', 'audio'))
     p.append(('src_dir', '/tmp/speech/an4_dataset'))
     p.append(('train_src', '/tmp/speech/src-train-head.txt'))
