@@ -365,8 +365,8 @@ class ONMTmodelAPI():
 
 
 def main():
-    # model = ONMTmodelAPI("model/date_acc_100.00_ppl_1.00_e7.pt")
-    model = ONMTmodelAPI("../S2Splay/model_api/processing/s2s_iwslt_ende/baseline-brnn.en-de.s154_acc_61.58_ppl_7.43_e21.pt")
+    model = ONMTmodelAPI("models/ada6_bridge_oldcopy_tagged_acc_54.17_ppl_11.17_e20.pt")
+    # model = ONMTmodelAPI("models/ende_acc_46.86_ppl_21.19_e12.pt")
     # Simple Case
     reply = model.translate(["This is a test ."], dump_data=True)
     # Case with attn overwrite OR partial
