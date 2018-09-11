@@ -74,7 +74,7 @@ class Translator(object):
                  max_length=100,
                  global_scorer=None,
                  copy_attn=False,
-                 gpu=False,
+                 gpu=-1,
                  dump_beam="",
                  min_length=0,
                  stepwise_penalty=False,
@@ -119,7 +119,6 @@ class Translator(object):
         self.report_score = report_score
         self.report_bleu = report_bleu
         self.report_rouge = report_rouge
-
         self.model.eval()
 
         # for debugging
@@ -144,6 +143,7 @@ class Translator(object):
                                      window_stride=self.window_stride,
                                      window=self.window,
                                      use_filter_pred=self.use_filter_pred)
+
 
         data_iter = onmt.io.OrderedIterator(
             dataset=data, device=self.gpu,
@@ -383,6 +383,7 @@ class Translator(object):
                     all_current.append([last.copy()] * self.beam_size)
                     # print("ac", all_current)
                 trace[ix] = all_current
+
         for j, b in enumerate(beam):
             # k holds the chosen beam, y the predictions
             if partial and trace[j]:
@@ -408,8 +409,9 @@ class Translator(object):
             ret["gold_score"] = self._run_target(batch, data)
         ret["batch"] = batch
 
+
         if return_states:
-            ret["context"] = context
+            ret["context"] = memory_bank
             """
             Predictions are a list per input
             Context is going round robin
@@ -423,11 +425,13 @@ class Translator(object):
                     cbatch.append(cpred)
 
                 resorted.append(cbatch)
+            #TODO: get the rest to work!
+            return ret
 
             target_states = [[] for predIx in range(batch.batch_size)]
             target_context = [[] for predIx in range(batch.batch_size)]
             for b in resorted:
-                tstates, _, cstar, attn = self._run_pred(src, context, enc_states,
+                tstates, _, cstar, attn = self._run_pred(src, memory_bank, enc_states,
                                            batch, b)
                 tstates = tstates.squeeze()
                 cstar = cstar.squeeze()
@@ -497,7 +501,7 @@ class Translator(object):
         _, src_lengths = batch.src
 
         dec_out, dec_states, attn, weighted_context = self.model.decoder(
-            tgt_in, context, dec_states, context_lengths=src_lengths)
+            tgt_in, context, dec_states, memory_lengths=src_lengths)
         # Special case -> only <s> gets fed
         try:
             dec_out_ret = dec_out[1:]
@@ -525,7 +529,7 @@ class Translator(object):
         _, src_lengths = batch.src
 
         dec_out, dec_states, _, __ = self.model.decoder(
-            tgt_in, context, dec_states, context_lengths=src_lengths)
+            tgt_in, context, dec_states, memory_lengths=src_lengths)
 
         alt_preds = []
         alt_scores = []
@@ -553,13 +557,13 @@ class Translator(object):
             prev = tgt_in.data[:ix+1]
             # Precompute initial state
             dec_out, dec_states, _, __ = self.model.decoder(
-                tgt_in[ix].unsqueeze(0), context, dec_states, context_lengths=src_lengths)
+                tgt_in[ix].unsqueeze(0), context, dec_states, memory_lengths=src_lengths)
             fix_dec_states = deepcopy(dec_states)
             c_out = []
             for ix2, a in enumerate(alt):
                 # Forward the latest tokens
                 d_out, d_states, _, __ = self.model.decoder(
-                    Variable(a.unsqueeze(0)), context, fix_dec_states, context_lengths=src_lengths)
+                    Variable(a.unsqueeze(0)), context, fix_dec_states, memory_lengths=src_lengths)
                 c_out.append(d_out.data)
                 # write these into the correct positions d_out -> in decoder states one per step
             out_states.append(c_out)

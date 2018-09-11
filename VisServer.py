@@ -230,9 +230,12 @@ class ONMTmodelAPI():
             torch.cuda.set_device(self.opt.gpu)
 
         # Translator
+        # TODO: expose the inference penalties
         self.scorer = onmt.translate.GNMTGlobalScorer(
             self.opt.alpha,
-            self.opt.beta)
+            self.opt.beta,
+            cov_penalty=None, 
+            length_penalty=None)
         self.translator = onmt.translate.Translator(
             self.model, self.fields,
             beam_size=self.opt.beam_size,
@@ -240,8 +243,7 @@ class ONMTmodelAPI():
             global_scorer=self.scorer,
             max_length=self.opt.max_sent_length,
             copy_attn=self.model_opt.copy_attn,
-            cuda=self.opt.cuda,
-            beam_trace=self.opt.dump_beam != "")
+            gpu=self.opt.gpu)
 
 
     def translate(self, in_text, partial_decode=[], attn_overwrite=[], k=5, attn=None, dump_data=False):
@@ -317,6 +319,7 @@ class ONMTmodelAPI():
 
         # Only has one batch, but indexing does not work
         for batch in test_data:
+            print(batch)
             batch_data = self.translator.translate_batch(
                 batch, data, return_states=True,
                 partial=partial, attn_overwrite=attn_overwrite)
@@ -368,9 +371,9 @@ def main():
     model = ONMTmodelAPI("models/ada6_bridge_oldcopy_tagged_acc_54.17_ppl_11.17_e20.pt")
     # model = ONMTmodelAPI("models/ende_acc_46.86_ppl_21.19_e12.pt")
     # Simple Case
-    reply = model.translate(["This is a test ."], dump_data=True)
+    reply = model.translate(["this is a test ."], dump_data=True)
     # Case with attn overwrite OR partial
-    reply = model.translate(["this is madness ."], attn_overwrite=[{2:0}])
+    # reply = model.translate(["this is madness ."], attn_overwrite=[{2:0}])
     # reply = model.translate(["this is madness ."], partial_decode=["das ist"])
     # Complex Case with attn and partial
     # reply = model.translate(["this is madness ."],

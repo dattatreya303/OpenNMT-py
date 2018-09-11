@@ -309,7 +309,7 @@ class RNNDecoderBase(nn.Module):
         # END
 
         # Run the forward pass of the RNN.
-        decoder_final, decoder_outputs, attns, weighted_context = self._run_forward_pass(
+        decoder_final, decoder_outputs, attns, coverage, weighted_context = self._run_forward_pass(
             tgt, memory_bank, state, 
             memory_lengths=memory_lengths, 
             attn_overwrite=attn_overwrite)
@@ -479,7 +479,6 @@ class InputFeedRNNDecoder(RNNDecoderBase):
             attns["copy"] = []
         if self._coverage:
             attns["coverage"] = []
-
         emb = self.embeddings(tgt)
         assert emb.dim() == 3  # len x batch x embedding_dim
 
@@ -495,7 +494,7 @@ class InputFeedRNNDecoder(RNNDecoderBase):
             decoder_input = torch.cat([emb_t, input_feed], 1)
 
             rnn_output, hidden = self.rnn(decoder_input, hidden)
-            attn_output, p_attn, weighted_context = self.attn(
+            decoder_output, p_attn, weighted_context = self.attn(
                 rnn_output,
                 memory_bank.transpose(0, 1),
                 memory_lengths=memory_lengths,
