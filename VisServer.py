@@ -41,6 +41,8 @@ class ONMTmodelAPI():
     def __init__(self, model_loc, opt={'gpu':-1,
                                        'beam_size': 5,
                                        'n_best': 5,
+                                       'alpha': 0,
+                                       'beta': 0
                                        }):
         # Simulate all commandline args
         parser = argparse.ArgumentParser(
@@ -72,7 +74,6 @@ class ONMTmodelAPI():
             torch.cuda.set_device(self.opt.gpu)
 
         # Translator
-        # TODO: expose the inference penalties
         self.scorer = onmt.translate.GNMTGlobalScorer(
             self.opt.alpha,
             self.opt.beta,
@@ -87,6 +88,99 @@ class ONMTmodelAPI():
             max_length=self.opt.max_length,
             copy_attn=self.model_opt.copy_attn,
             gpu=self.opt.gpu)
+
+
+    def format_payload(self, translation_list, batch_data, in_text):
+        """
+        Structure of Payload
+        
+        OLD: 
+
+        {1: {
+            # top_k
+            scores: [top1_score, top2_score, ...]
+            # src
+            encoder: [{'token': str, 
+                       'state': [float, float, ...]}, 
+                      {}, 
+                      ...
+                      ], 
+            # top_k x tgt_len
+            decoder: [[{'token': str,
+                       'state': [float, float, ...],
+                       'cstar': [float, float, ...]},
+                       {},
+                       ...
+                      ],
+                      [],
+                      ...
+                     ] 
+            # top_k x max_tgt x src
+            attn: [[[float, float, float],
+                    [],
+                    ...
+                    ],
+                    [],
+                    ...
+                   ]
+            # max_tgt x beam_size
+            beam: [[{'pred': int,
+                     'score': float,
+                     'state: [float, float, ...]'}
+                   ],
+                   [],
+                   ...
+                  ]
+            # max_txt x beam_size x curr_step
+            beam_trace: [[[int], [int], ...],
+                         [[hyp, hyp], [hyp, hyp], ...],
+                         ...
+                        ]
+            }, 
+         2: { ...}
+         }
+        """
+        reply = {}
+        for transIx, trans in enumerate(translation_list):
+            context = batch_data['context'][:, transIx, :]
+            res = {}
+            # Fill encoder Result
+            encoderRes = []
+            for token, state in zip(in_text[transIx].split(), context):
+                encoderRes.append({'token': token,
+                                   'state': state.data.tolist()
+                                   })
+            res['encoder'] = encoderRes
+
+            # # Fill decoder Result
+            decoderRes = []
+            attnRes = []
+            for ix, p in enumerate(trans.pred_sents[:self.translator.n_best]):
+                if not p:
+                    continue
+                topIx = []
+                topIxAttn = []
+                for token, attn, state, cstar in zip(p,
+                                                     trans.attns[ix],
+                                                     batch_data["target_states"][transIx][ix],
+                                                     batch_data['target_cstar'][transIx][ix]):
+                    currentDec = {}
+                    currentDec['token'] = token
+                    currentDec['state'] = state.data.tolist()
+                    currentDec['cstar'] = cstar.data.tolist()
+                    topIx.append(currentDec)
+                    topIxAttn.append(attn.tolist())
+                    # if t in ['.', '!', '?']:
+                    #     break
+                decoderRes.append(topIx)
+                attnRes.append(topIxAttn)
+            res['scores'] = np.array(trans.pred_scores).tolist()[:self.translator.n_best]
+            res['decoder'] = decoderRes
+            res['attn'] = attnRes
+            res['beam'] = batch_data['beam'][transIx]
+            res['beam_trace'] = batch_data['beam_trace'][transIx]
+            reply[transIx] = res
+        return reply
 
 
     def translate(self, in_text, partial_decode=[], attn_overwrite=[], k=5, attn=None, dump_data=False):
@@ -162,58 +256,21 @@ class ONMTmodelAPI():
 
         # Run the translation
         batch_data = self.translator.translate_batch(
-          batch, data, return_states=True,
-          partial=partial, attn_overwrite=attn_overwrite)
+            batch, data, 
+            return_states=True,
+            partial=partial, 
+            attn_overwrite=attn_overwrite)
         translations = builder.from_batch(batch_data)
 
-        """
-        Structure of Payload
-        """
-
-        # Initialize payload
-        reply = {}
-        for transIx, trans in enumerate(translations):
-            context = batch_data['context'][:, transIx, :]
-            res = {}
-            # Fill encoder Result
-            encoderRes = []
-            for token, state in zip(in_text[transIx].split(), context):
-                encoderRes.append({'token': token,
-                                   'state': state.data.tolist()
-                                   })
-            res['encoder'] = encoderRes
-
-            # # Fill decoder Result
-            decoderRes = []
-            attnRes = []
-            for ix, p in enumerate(trans.pred_sents[:k]):
-                if p:
-                    topIx = []
-                    topIxAttn = []
-                    for token, attn, state, cstar in zip(p,
-                                                         trans.attns[ix],
-                                                         batch_data["target_states"][transIx][ix],
-                                                         batch_data['target_cstar'][transIx][ix]):
-                        currentDec = {}
-                        currentDec['token'] = token
-                        currentDec['state'] = state.data.tolist()
-                        currentDec['cstar'] = cstar.data.tolist()
-                        topIx.append(currentDec)
-                        topIxAttn.append(attn.tolist())
-                        # if t in ['.', '!', '?']:
-                        #     break
-                    decoderRes.append(topIx)
-                    attnRes.append(topIxAttn)
-            res['scores'] = np.array(trans.pred_scores).tolist()[:k]
-            res['decoder'] = decoderRes
-            res['attn'] = attnRes
-            res['beam'] = batch_data['beam'][transIx]
-            res['beam_trace'] = batch_data['beam_trace'][transIx]
-            reply[transIx] = res
+        # Format to specified format
+        payload = self.format_payload(
+            translation_list=translations, 
+            batch_data=batch_data, 
+            in_text=in_text)
 
         # For debugging, uncomment this
-        # print(traverse_reply(reply))
-        return json.dumps(reply)
+        # print(traverse_reply(payload))
+        return json.dumps(payload)
 
 
 def main():
