@@ -218,7 +218,6 @@ class TextDataset(ONMTDatasetBase):
                                      pad_token=PAD_WORD)
 
         def make_src(data, vocab, is_train):
-            print("THIS IS THE DATAAA", data)
             src_size = max([t.size(0) for t in data])
             src_vocab_size = max([t.max() for t in data]) + 1
             alignment = torch.zeros(src_size, len(data), src_vocab_size)

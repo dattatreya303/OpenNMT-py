@@ -568,7 +568,6 @@ class Translator(object):
 
         dec_out, dec_states, attn, __ = self.model.decoder(
             tgt_in, context, dec_states, memory_lengths=src_lengths)
-        print(dec_out.shape, attn['copy'].shape)
         alt_preds = []
         alt_scores = []
         if not self.copy_attn:
@@ -648,7 +647,7 @@ class Translator(object):
                    or t.data[0] == self.fields["tgt"].vocab.stoi[onmt.io.EOS_WORD] \
                    or t.data[0] == self.fields["tgt"].vocab.stoi["."]:
                     continue
-                current_state = [list(s[:,ix,:].squeeze().numpy()) for s in stat]
+                current_state = [list(s[:,ix,:].squeeze().numpy().tolist()) for s in stat]
                 for pr, sc, st in zip(list(pred[ix].numpy()), list(sco[ix].numpy()), current_state):
                     current_dic = {"pred": int(pr),
                                    "score": float(sc),
