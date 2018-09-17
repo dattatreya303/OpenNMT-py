@@ -12,6 +12,8 @@ import onmt.translate.Beam
 import onmt.io
 import onmt.opts
 
+import torchtext
+
 
 def make_translator(opt, report_score=True, out_file=None):
     if out_file is None:
@@ -425,8 +427,6 @@ class Translator(object):
                     cbatch.append(cpred)
 
                 resorted.append(cbatch)
-            #TODO: get the rest to work!
-            return ret
 
             target_states = [[] for predIx in range(batch.batch_size)]
             target_context = [[] for predIx in range(batch.batch_size)]
@@ -444,13 +444,15 @@ class Translator(object):
                     target_states[0].append(tstates)
                     target_context[0].append(cstar)
             # Get the top 5 for each time step
-            res = self._get_top_k(src, context, enc_states,
-                                  batch, resorted[0])
+            res = self._get_top_k(src, memory_bank, enc_states,
+                                  batch, resorted[0], data=data)
             ret["beam"] = res
             ret["beam_trace"] = trace
 
             ret["target_states"] = target_states
             ret["target_cstar"] = target_context
+
+            # Todo: add copy attn if applicable, add copy switch for each step
         return ret
 
     def _from_beam(self, beam, partial=[], pref_attn=None):
@@ -495,7 +497,10 @@ class Translator(object):
             p = [self.fields["tgt"].vocab.stoi[onmt.io.BOS_WORD]] + p
             pred_in.append(tt.LongTensor(p).unsqueeze(1))
         tgt_in = Variable(torch.stack(pred_in, 1))
-
+        # Set copied OOV words to UNK
+        if self.copy_attn:
+            tgt_in = tgt_in.masked_fill(
+                tgt_in.gt(len(self.fields["tgt"].vocab) - 1), 0)
         dec_states = self.model.decoder.init_decoder_state(
             src, context, enc_states)
         _, src_lengths = batch.src
@@ -512,9 +517,36 @@ class Translator(object):
 
         return dec_out_ret, dec_states, weighted_context_ret, attn['std']
 
-    def _get_top_k(self, src, context, enc_states, batch, pred, k=5):
+    def _get_top_k(self, 
+                   src, 
+                   context, 
+                   enc_states, 
+                   batch, 
+                   pred, 
+                   k=5,
+                   data=None):
+        """
+        Computes the top k predictions for each time step.
+        """
         tt = torch.cuda if self.cuda else torch
         tgt_pad = self.fields["tgt"].vocab.stoi[onmt.io.PAD_WORD]
+        if self.copy_attn:
+            src_vocab = torchtext.vocab.Vocab(Counter([int(s) for s in src]),
+                                              specials=[0, 
+                                                        1])
+            src_map = torch.LongTensor([src_vocab.stoi[int(w)] for w in src]).unsqueeze(1)
+            src_size = len(src)
+            #print(int(src.max()))
+            src_vocab_size = int(src_map.max()) + 1
+            # print(src_size, src_vocab_size)
+            alignment = torch.zeros(src_size, 1, src_vocab_size)
+            for j, t in enumerate(src_map):
+                alignment[int(j), 0, int(t)] = 1
+            src_map = Variable(alignment)
+        else:
+            src_map = None
+
+        # print(src_map.shape)
         max_len = len(max(pred, key=len))
         context = context[:, :batch.batch_size, :]
         pred_in = []
@@ -524,29 +556,61 @@ class Translator(object):
             p = [self.fields["tgt"].vocab.stoi[onmt.io.BOS_WORD]] + p[:-2]
             pred_in.append(tt.LongTensor(p).unsqueeze(1))
         tgt_in = Variable(torch.stack(pred_in, 1))
+        # Set copied OOV words to UNK
+        if self.copy_attn:
+            tgt_in = tgt_in.masked_fill(
+                tgt_in.gt(len(self.fields["tgt"].vocab) - 1), 0)
+
+
         dec_states = self.model.decoder.init_decoder_state(
             src, context, enc_states)
         _, src_lengths = batch.src
 
-        dec_out, dec_states, _, __ = self.model.decoder(
+        dec_out, dec_states, attn, __ = self.model.decoder(
             tgt_in, context, dec_states, memory_lengths=src_lengths)
-
+        print(dec_out.shape, attn['copy'].shape)
         alt_preds = []
         alt_scores = []
-        for ix, dec in enumerate(dec_out):
-            out = self.model.generator.forward(dec)
-            # each o is a different prediction
-            alt = []
-            alt_s = []
-            for o in out:
-                o = o.view(-1)
-                best_scores, best_scores_id = o.squeeze().topk(k, 0, True, True)
-                alt.append(best_scores_id.data)
-                alt_s.append(best_scores.data)
+        if not self.copy_attn:
+            for ix, dec in enumerate(dec_out):
+                out = self.model.generator.forward(dec)
+                
+                # each o is a different prediction
+                alt = []
+                alt_s = []
+                for o in out:
+                    o = o.view(-1)
+                    best_scores, best_scores_id = o.squeeze().topk(k, 0, True, True)
+                    alt.append(best_scores_id.data)
+                    alt_s.append(best_scores.data)
 
-                # print(best_scores.data, best_scores_id.data)
-            alt_preds.append(alt)
-            alt_scores.append(alt_s)
+                    # print(best_scores.data, best_scores_id.data)
+                alt_preds.append(alt)
+                alt_scores.append(alt_s)
+        else:
+            for ix, (dec, copy_attn) in enumerate(zip(dec_out, attn['copy'])):
+                out = self.model.generator.forward(dec,
+                                                   copy_attn,
+                                                   src_map)
+                # beam x (tgt_vocab + extra_vocab)
+                out = data.collapse_copy_scores(
+                    out.data.view(1, 1, -1),
+                    batch, self.fields["tgt"].vocab, [src_vocab])
+                #     # beam x tgt_vocab
+                #     out = out.log()
+                #     beam_attn = unbottle(attn["copy"])
+
+                # each o is a different prediction
+                alt = []
+                alt_s = []
+                for o in out:
+                    o = o.view(-1)
+                    best_scores, best_scores_id = o.squeeze().topk(k, 0, True, True)
+                    alt.append(best_scores_id)
+                    alt_s.append(best_scores)
+                    # print(best_scores.data, best_scores_id.data)
+                alt_preds.append(alt)
+                alt_scores.append(alt_s)
 
         # Construct new inputs
         out_states = []
@@ -562,6 +626,8 @@ class Translator(object):
             c_out = []
             for ix2, a in enumerate(alt):
                 # Forward the latest tokens
+                if int(a) > len(self.fields["tgt"].vocab) -1:
+                    a = a.fill_(0)
                 d_out, d_states, _, __ = self.model.decoder(
                     Variable(a.unsqueeze(0)), context, fix_dec_states, memory_lengths=src_lengths)
                 c_out.append(d_out.data)
@@ -573,7 +639,6 @@ class Translator(object):
         res = {ix:[] for ix in range(tgt_in.size(1))}
         # Iterate over time steps
         for targ, stat, pred, sco in zip(tgt_in, out_states, alt_preds, alt_scores):
-
             # Iterate over batch
             for ix, t in enumerate(targ):
                 outs = []
@@ -585,8 +650,8 @@ class Translator(object):
                     continue
                 current_state = [list(s[:,ix,:].squeeze().numpy()) for s in stat]
                 for pr, sc, st in zip(list(pred[ix].numpy()), list(sco[ix].numpy()), current_state):
-                    current_dic = {"pred": pr,
-                                   "score": sc,
+                    current_dic = {"pred": int(pr),
+                                   "score": float(sc),
                                    "state": st}
                     outs.append(current_dic)
 

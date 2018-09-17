@@ -319,7 +319,6 @@ class ONMTmodelAPI():
 
         # Only has one batch, but indexing does not work
         for batch in test_data:
-            print(batch)
             batch_data = self.translator.translate_batch(
                 batch, data, return_states=True,
                 partial=partial, attn_overwrite=attn_overwrite)
@@ -364,7 +363,19 @@ class ONMTmodelAPI():
                 res['beam'] = batch_data['beam'][transIx]
                 res['beam_trace'] = batch_data['beam_trace'][transIx]
                 reply[transIx] = res
-        return reply
+
+        def traverse_reply(rep):
+          if type(rep) == dict:
+            for key, value in rep.items():
+                print(key)
+                traverse_reply(value)
+          elif type(rep) == list:
+            traverse_reply(rep[0])
+          else:
+            print(type(rep))
+        print(traverse_reply(reply))
+        return json.dumps(reply)
+        # return reply
 
 
 def main():
@@ -398,7 +409,7 @@ def main():
     # print(len(reply[0]['decoder']))
     # print(len(reply[0]['decoder'][0]))
     # print(reply[0]['beam_trace'])
-    #print(json.dumps(reply, indent=2, sort_keys=True))
+    print(json.dumps(reply, indent=2, sort_keys=True))
 
 if __name__ == "__main__":
     main()
