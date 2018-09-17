@@ -47,7 +47,7 @@ class ONMTmodelAPI():
             description='translate.py',
             formatter_class=argparse.ArgumentDefaultsHelpFormatter)
         translate_opts(parser)
-        
+
         # Add cmd opts (can also be used for other opts in future)
         opt['model'] = model_loc
         opt['src'] = "dummy_src"
@@ -99,7 +99,13 @@ class ONMTmodelAPI():
 
         # Set batch size to number of requested translations
         self.opt.batch_size = len(in_text)
-        # Workaround until we have API that does not require files
+        # set n_best in translator
+        self.translator.n_best = k
+        # Increase Beam size if asked for large k
+        if self.translator.beam_size < k:
+            self.translator.beam_size = k
+
+        # Write input to file for dataset builder
         with codecs.open("tmp.txt", "w", "utf-8") as f:
             for line in in_text:
                 f.write(line + "\n")
@@ -134,13 +140,6 @@ class ONMTmodelAPI():
             sort_within_batch=True,
             shuffle=False)
 
-        # set n_best in translator
-        self.translator.n_best = k
-
-        # Increase Beam size if asked for large k
-        if self.translator.beam_size < k:
-            self.translator.beam_size = k
-
         # Builder used to convert translation to text
         builder = onmt.translate.TranslationBuilder(
             data, self.translator.fields,
@@ -156,53 +155,61 @@ class ONMTmodelAPI():
                 curr_part.append(vocab.stoi[tok])
             partial.append(curr_part)
 
+        # Retrieve batch to translate
+        # We only have one batch, but indexing does not work
+        for b in test_data:
+          batch = b
+
+        # Run the translation
+        batch_data = self.translator.translate_batch(
+          batch, data, return_states=True,
+          partial=partial, attn_overwrite=attn_overwrite)
+        translations = builder.from_batch(batch_data)
+
+        """
+        Structure of Payload
+        """
+
+        # Initialize payload
         reply = {}
+        for transIx, trans in enumerate(translations):
+            context = batch_data['context'][:, transIx, :]
+            res = {}
+            # Fill encoder Result
+            encoderRes = []
+            for token, state in zip(in_text[transIx].split(), context):
+                encoderRes.append({'token': token,
+                                   'state': state.data.tolist()
+                                   })
+            res['encoder'] = encoderRes
 
-        # Only has one batch, but indexing does not work
-        for batch in test_data:
-            batch_data = self.translator.translate_batch(
-                batch, data, return_states=True,
-                partial=partial, attn_overwrite=attn_overwrite)
-            translations = builder.from_batch(batch_data)
-            # iteratres over items in batch
-            for transIx, trans in enumerate(translations):
-                context = batch_data['context'][:, transIx, :]
-                res = {}
-                # Fill encoder Result
-                encoderRes = []
-                for token, state in zip(in_text[transIx].split(), context):
-                    encoderRes.append({'token': token,
-                                       'state': state.data.tolist()
-                                       })
-                res['encoder'] = encoderRes
-
-                # # Fill decoder Result
-                decoderRes = []
-                attnRes = []
-                for ix, p in enumerate(trans.pred_sents[:k]):
-                    if p:
-                        topIx = []
-                        topIxAttn = []
-                        for token, attn, state, cstar in zip(p,
-                                                             trans.attns[ix],
-                                                             batch_data["target_states"][transIx][ix],
-                                                             batch_data['target_cstar'][transIx][ix]):
-                            currentDec = {}
-                            currentDec['token'] = token
-                            currentDec['state'] = state.data.tolist()
-                            currentDec['cstar'] = cstar.data.tolist()
-                            topIx.append(currentDec)
-                            topIxAttn.append(attn.tolist())
-                            # if t in ['.', '!', '?']:
-                            #     break
-                        decoderRes.append(topIx)
-                        attnRes.append(topIxAttn)
-                res['scores'] = np.array(trans.pred_scores).tolist()[:k]
-                res['decoder'] = decoderRes
-                res['attn'] = attnRes
-                res['beam'] = batch_data['beam'][transIx]
-                res['beam_trace'] = batch_data['beam_trace'][transIx]
-                reply[transIx] = res
+            # # Fill decoder Result
+            decoderRes = []
+            attnRes = []
+            for ix, p in enumerate(trans.pred_sents[:k]):
+                if p:
+                    topIx = []
+                    topIxAttn = []
+                    for token, attn, state, cstar in zip(p,
+                                                         trans.attns[ix],
+                                                         batch_data["target_states"][transIx][ix],
+                                                         batch_data['target_cstar'][transIx][ix]):
+                        currentDec = {}
+                        currentDec['token'] = token
+                        currentDec['state'] = state.data.tolist()
+                        currentDec['cstar'] = cstar.data.tolist()
+                        topIx.append(currentDec)
+                        topIxAttn.append(attn.tolist())
+                        # if t in ['.', '!', '?']:
+                        #     break
+                    decoderRes.append(topIx)
+                    attnRes.append(topIxAttn)
+            res['scores'] = np.array(trans.pred_scores).tolist()[:k]
+            res['decoder'] = decoderRes
+            res['attn'] = attnRes
+            res['beam'] = batch_data['beam'][transIx]
+            res['beam_trace'] = batch_data['beam_trace'][transIx]
+            reply[transIx] = res
 
         # For debugging, uncomment this
         # print(traverse_reply(reply))
