@@ -285,7 +285,7 @@ class Translator(object):
         if partial:
             print("partial in Translator", partial)
             partial_pre = [p[:-1] for p in partial]
-            _, dec_states, __, pref_attn = self._run_pred(src, memory_bank,
+            _, dec_states, __, pref_attn, _____ = self._run_pred(src, memory_bank,
                                                           enc_states, batch,
                                                           partial_pre)
             # Pref attn is word x batch x source
@@ -349,7 +349,7 @@ class Translator(object):
                 # beam x tgt_vocab
                 beam_attn = unbottle(attn["std"])
             else:
-                out = self.model.generator.forward(dec_out,
+                out, p_copy = self.model.generator.forward(dec_out,
                                                    attn["copy"].squeeze(0),
                                                    src_map)
                 # beam x (tgt_vocab + extra_vocab)
@@ -430,19 +430,21 @@ class Translator(object):
 
             target_states = [[] for predIx in range(batch.batch_size)]
             target_context = [[] for predIx in range(batch.batch_size)]
+            target_extra = [[] for predIx in range(batch.batch_size)]
             for b in resorted:
-                tstates, _, cstar, attn = self._run_pred(src, memory_bank, enc_states,
-                                           batch, b)
+                tstates, _, context, attn, decoder_extra = self._run_pred(
+                    src, memory_bank, enc_states, batch, b)
                 tstates = tstates.squeeze()
-                cstar = cstar.squeeze()
+                context = context.squeeze()
 
                 if batch.batch_size > 1:
                     for predIx in range(batch.batch_size):
                         target_states[predIx].append(tstates[:,predIx,:].squeeze())
-                        target_context[predIx].append(cstar[predIx,:,:].squeeze())
+                        target_context[predIx].append(context[predIx,:,:].squeeze())
                 else:
                     target_states[0].append(tstates)
-                    target_context[0].append(cstar)
+                    target_context[0].append(context)
+                    target_extra[0].append(decoder_extra)
             # Get the top 5 for each time step
             res = self._get_top_k(src, memory_bank, enc_states,
                                   batch, resorted[0], data=data)
@@ -450,7 +452,8 @@ class Translator(object):
             ret["beam_trace"] = trace
 
             ret["target_states"] = target_states
-            ret["target_cstar"] = target_context
+            ret["target_context"] = target_context
+            ret["target_extra"] = target_extra
 
             # Todo: add copy attn if applicable, add copy switch for each step
         return ret
@@ -485,6 +488,21 @@ class Translator(object):
         # print(ret)
         return ret
 
+    def _compute_src_map(self, src):
+        src_vocab = torchtext.vocab.Vocab(Counter([int(s) for s in src]),
+                                              specials=[0, 
+                                                        1])
+        src_map = torch.LongTensor([src_vocab.stoi[int(w)] for w in src]).unsqueeze(1)
+        src_size = len(src)
+        #print(int(src.max()))
+        src_vocab_size = int(src_map.max()) + 1
+        # print(src_size, src_vocab_size)
+        alignment = torch.zeros(src_size, 1, src_vocab_size)
+        for j, t in enumerate(src_map):
+            alignment[int(j), 0, int(t)] = 1
+        src_map = Variable(alignment)
+        return src_vocab, src_map
+
     def _run_pred(self, src, context, enc_states, batch, pred):
         tt = torch.cuda if self.cuda else torch
         tgt_pad = self.fields["tgt"].vocab.stoi[onmt.io.PAD_WORD]
@@ -507,6 +525,16 @@ class Translator(object):
 
         dec_out, dec_states, attn, weighted_context = self.model.decoder(
             tgt_in, context, dec_states, memory_lengths=src_lengths)
+
+        decoder_extra = {}
+        # Run Generator in Copy attn to get p_copy for each step
+        if self.copy_attn:
+            _, src_map = self._compute_src_map(src)
+            _, p_copy = self.model.generator.forward(dec_out.squeeze(1),
+                                                   attn["copy"].squeeze(1),
+                                                   src_map)
+            decoder_extra['p_copy'] = p_copy.squeeze(1)
+
         # Special case -> only <s> gets fed
         try:
             dec_out_ret = dec_out[1:]
@@ -515,7 +543,7 @@ class Translator(object):
             dec_out_ret = None
             weighted_context_ret = None
 
-        return dec_out_ret, dec_states, weighted_context_ret, attn['std']
+        return dec_out_ret, dec_states, weighted_context_ret, attn['std'], decoder_extra
 
     def _get_top_k(self, 
                    src, 
@@ -531,18 +559,7 @@ class Translator(object):
         tt = torch.cuda if self.cuda else torch
         tgt_pad = self.fields["tgt"].vocab.stoi[onmt.io.PAD_WORD]
         if self.copy_attn:
-            src_vocab = torchtext.vocab.Vocab(Counter([int(s) for s in src]),
-                                              specials=[0, 
-                                                        1])
-            src_map = torch.LongTensor([src_vocab.stoi[int(w)] for w in src]).unsqueeze(1)
-            src_size = len(src)
-            #print(int(src.max()))
-            src_vocab_size = int(src_map.max()) + 1
-            # print(src_size, src_vocab_size)
-            alignment = torch.zeros(src_size, 1, src_vocab_size)
-            for j, t in enumerate(src_map):
-                alignment[int(j), 0, int(t)] = 1
-            src_map = Variable(alignment)
+            src_vocab, src_map = self._compute_src_map(src)
         else:
             src_map = None
 
@@ -588,9 +605,9 @@ class Translator(object):
                 alt_scores.append(alt_s)
         else:
             for ix, (dec, copy_attn) in enumerate(zip(dec_out, attn['copy'])):
-                out = self.model.generator.forward(dec,
-                                                   copy_attn,
-                                                   src_map)
+                out, p_copy = self.model.generator.forward(dec,
+                                                           copy_attn,
+                                                           src_map)
                 # beam x (tgt_vocab + extra_vocab)
                 out = data.collapse_copy_scores(
                     out.data.view(1, 1, -1),
