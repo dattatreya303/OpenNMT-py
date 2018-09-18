@@ -5,7 +5,9 @@ import json
 import sys
 
 import h5py
+import sys
 import torch
+
 
 import numpy as np
 import onmt.io
@@ -23,18 +25,16 @@ BOS_WORD = '<s>'
 EOS_WORD = '</s>'
 
 
-
-
 def traverse_reply(rep, depth=0):
-          indent = "\t" *depth
-          if type(rep) == dict:
-            for key, value in rep.items():
-                print(indent + str(key))
-                traverse_reply(value, depth=depth+1)
-          elif type(rep) == list:
-            traverse_reply(rep[0], depth=depth+1)
-          else:
-            print(indent + str(type(rep)))
+    indent = "\t" * depth
+    if type(rep) == dict:
+        for key, value in rep.items():
+            print(indent + str(key))
+            traverse_reply(value, depth=depth+1)
+    elif type(rep) == list:
+        traverse_reply(rep[0], depth=depth+1)
+    else:
+        print(indent + str(type(rep)))
 
 
 class ONMTmodelAPI():
@@ -44,7 +44,9 @@ class ONMTmodelAPI():
                                        'alpha': 0,
                                        'beta': 0
                                        }):
-        # Simulate all commandline args
+        # Simulate all commandline args (need to shut down the real argv for this)
+        old_argv = sys.argv.copy()
+        sys.argv = sys.argv[:1]
         parser = argparse.ArgumentParser(
             description='translate.py',
             formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -56,7 +58,7 @@ class ONMTmodelAPI():
         for (k, v) in opt.items():
             sys.argv += ['-%s' % k, str(v)]
         self.opt = parser.parse_args()
-
+        sys.argv = old_argv
         # Model load options
         dummy_parser = argparse.ArgumentParser(description='train.py')
         model_opts(dummy_parser)
@@ -139,20 +141,75 @@ class ONMTmodelAPI():
             }, 
          2: { ...}
          }
+
+
+        NEW: 
+        TODO: can we prune? 
+
+        {1: {
+            # top_k
+            scores: [top1_score, top2_score, ...]
+            # src
+            encoder: [{'token': str, 
+                       'state': [float, float, ...],
+                       'XXX': XXX}, 
+                      {}, 
+                      ...
+                      ], 
+            # top_k x tgt_len
+            decoder: [[{'token': str,
+                       'state': [float, float, ...],
+                       'context': [float, float, ...],
+                        'XXX': XXX},
+                       {},
+                       ...
+                      ],
+                      [],
+                      ...
+                     ] 
+            # top_k x max_tgt x src
+            alignment: {'attn': [[[float, float, float],
+                                    [],
+                                    ...
+                                    ],
+                                    [],
+                                    ...
+                                   ],
+                        'XXX': XXX
+                        }
+            # max_tgt x beam_size
+            beam: [[{'pred': int,
+                     'score': float,
+                     'state: [float, float, ...]'}
+                   ],
+                   [],
+                   ...
+                  ]
+            # max_txt x beam_size x curr_step
+            beam_trace: [[[int], [int], ...],
+                         [[hyp, hyp], [hyp, hyp], ...],
+                         ...
+                        ]
+            }, 
+         2: { ...}
+         }
         """
+
+        # print(batch_data['target_extra'][0])
+        # print(batch_data['target_context'])
         reply = {}
         for transIx, trans in enumerate(translation_list):
-            context = batch_data['context'][:, transIx, :]
             res = {}
             # Fill encoder Result
             encoderRes = []
+            context = batch_data['context'][:, transIx, :]
             for token, state in zip(in_text[transIx].split(), context):
                 encoderRes.append({'token': token,
                                    'state': state.data.tolist()
                                    })
             res['encoder'] = encoderRes
 
-            # # Fill decoder Result
+            # Fill decoder+Attn Result
             decoderRes = []
             attnRes = []
             for ix, p in enumerate(trans.pred_sents[:self.translator.n_best]):
@@ -160,25 +217,31 @@ class ONMTmodelAPI():
                     continue
                 topIx = []
                 topIxAttn = []
-                for token, attn, state, cstar in zip(p,
+                for tokIx, (token, attn, state, cstar) in enumerate(zip(p,
                                                      trans.attns[ix],
                                                      batch_data["target_states"][transIx][ix],
-                                                     batch_data['target_cstar'][transIx][ix]):
+                                                     batch_data['target_context'][transIx][ix])):
                     currentDec = {}
                     currentDec['token'] = token
                     currentDec['state'] = state.data.tolist()
-                    currentDec['cstar'] = cstar.data.tolist()
+                    currentDec['context'] = cstar.data.tolist()
+                    # Extra tgt annotations
+                    for key, value in batch_data['target_extra'][transIx][ix].items():
+                        currentDec[key] = float(value[tokIx+1].data[0])
                     topIx.append(currentDec)
                     topIxAttn.append(attn.tolist())
                     # if t in ['.', '!', '?']:
                     #     break
                 decoderRes.append(topIx)
                 attnRes.append(topIxAttn)
-            res['scores'] = np.array(trans.pred_scores).tolist()[:self.translator.n_best]
             res['decoder'] = decoderRes
             res['attn'] = attnRes
+
+            res['scores'] = np.array(trans.pred_scores).tolist()[:self.translator.n_best]
             res['beam'] = batch_data['beam'][transIx]
             res['beam_trace'] = batch_data['beam_trace'][transIx]
+
+            # Set reply index
             reply[transIx] = res
         return reply
 
@@ -269,8 +332,8 @@ class ONMTmodelAPI():
             in_text=in_text)
 
         # For debugging, uncomment this
-        # print(traverse_reply(payload))
-        return json.dumps(payload)
+        # traverse_reply(payload)
+        return payload
 
 
 def main():
