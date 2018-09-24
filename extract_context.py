@@ -16,7 +16,7 @@ import onmt.Models
 import onmt.ModelConstructor
 import onmt.modules
 from onmt.Utils import use_gpu
-import opts
+from onmt import opts
 import h5py
 import numpy as np
 
@@ -140,8 +140,8 @@ def extract_states(model, fields, data_type, model_opt, data_iter):
     # tgt_vocab = fields['tgt'].vocab
 
     # Select max length to prune
-    max_src_len = 50
-    max_tgt_len = 50
+    max_src_len = 400
+    max_tgt_len = 100
     # Set path and remove if file exists already
     path = "s2s/states.h5"
     if os.path.isfile(path):
@@ -152,40 +152,52 @@ def extract_states(model, fields, data_type, model_opt, data_iter):
                                           max_src_len),
                                   maxshape=(None, None),
                                   dtype="int",
-                                  chunks=(10, 5))
+                                  chunks=(10, 5),
+                                  compression="gzip", 
+                                  compression_opts=9)
         tgtset = f.create_dataset("tgt", (opt.batch_size,
                                           max_tgt_len),
                                   maxshape=(None, None),
                                   dtype="int",
-                                  chunks=(10, 5))
+                                  chunks=(10, 5),
+                                  compression="gzip", 
+                                  compression_opts=9)
         attnset = f.create_dataset("attn", (opt.batch_size,
                                             max_tgt_len,
                                             max_src_len),
                                    maxshape=(None, None, None),
                                    dtype="float16",
-                                   chunks=(10, 5, 5))
+                                   chunks=(10, 5, 5),
+                                   compression="gzip", 
+                                   compression_opts=9)
         cstarset = f.create_dataset("cstar", (opt.batch_size,
                                               max_tgt_len,
-                                              100),
+                                              512),
                                     maxshape=(None, None, None),
                                     dtype="float16",
-                                    chunks=(10, 5, 5))
+                                    chunks=(10, 5, 5),
+                                    compression="gzip", 
+                                    compression_opts=9)
 
         # Save encoder and decoder_hidden
         encoderset = f.create_dataset("encoder_out",
                                       (opt.batch_size,
-                                       max_tgt_len,
-                                       100),
+                                       max_src_len,
+                                       512),
                                       maxshape=(None, None, None),
                                       dtype="float16",
-                                      chunks=(10, 5, 5))
+                                      chunks=(10, 5, 5),
+                                      compression="gzip", 
+                                      compression_opts=9)
         decoderset = f.create_dataset("decoder_out",
                                       (opt.batch_size,
                                        max_tgt_len,
-                                       100),
+                                       512),
                                       maxshape=(None, None, None),
                                       dtype="float16",
-                                      chunks=(10, 5, 5))
+                                      chunks=(10, 5, 5),
+                                      compression="gzip", 
+                                      compression_opts=9)
 
         bcounter = 0
         for batch in train_iter:
@@ -286,7 +298,7 @@ def extract_states(model, fields, data_type, model_opt, data_iter):
             bcounter += bsize
             if bcounter % 100 == 0:
                 print("Example #", bcounter)
-            if bcounter > 50000:
+            if bcounter > 25000:
                 break
 
 def check_save_model_path():
@@ -336,7 +348,9 @@ def main():
 
     data = onmt.io.build_dataset(fields, "text",
                                  opt.src, opt.tgt,
-                                 use_filter_pred=False)
+                                 use_filter_pred=False,
+                                 src_seq_length_trunc=400,
+                                 tgt_seq_length_trunc=100)
     data_iter = onmt.io.OrderedIterator(
         dataset=data, device=opt.gpu,
         batch_size=opt.batch_size, train=False, sort=False,
