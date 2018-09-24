@@ -373,6 +373,13 @@ class Translator(object):
         # (4) Extract sentences from beam.
         ret = self._from_beam(beam, partial, pref_attn)
 
+        def build_target_tokens(src_vocab, tok):
+            vocab = self.fields["tgt"].vocab
+            if tok < len(vocab):
+                return vocab.itos[tok]
+            else:
+                return src_vocab.itos[tok - len(vocab)]
+
         # Compute the beam trace
         trace = {}
         # If we have prefix decoding, add this to beam
@@ -382,7 +389,7 @@ class Translator(object):
                 last = []
                 # Ignore last index, since that is on the beam
                 for wIx in partial[ix][:-1]:
-                    last.append(wIx)
+                    last.append(build_target_tokens(data.src_vocabs[0], wIx))
                     # print("last", last)
                     all_current.append([last.copy()] * self.beam_size)
                     # print("ac", all_current)
@@ -401,13 +408,13 @@ class Translator(object):
                 # print("cur_top", cur_tops.numpy())
                 # print("cur_preds", b.next_ys[ix].numpy())
                 if not last:
-                    last = [[b.next_ys[0][k]] for k in cur_tops]
+                    last = [[build_target_tokens(data.src_vocabs[0], b.next_ys[0][k])] for k in cur_tops]
                 else:
-                    last = [last[b.prev_ks[ix][a]] + [b.next_ys[ix][k]] for a, k
+                    last = [last[b.prev_ks[ix][a]] + [build_target_tokens(data.src_vocabs[0], b.next_ys[ix][k])] for a, k
                             in enumerate(cur_tops)]
                 all_current.append(last)
             trace[j] = all_current
-
+            
         ret["gold_score"] = [0] * batch_size
         if "tgt" in batch.__dict__:
             ret["gold_score"] = self._run_target(batch, data)
