@@ -285,9 +285,10 @@ class Translator(object):
         if partial:
             print("partial in Translator", partial)
             partial_pre = [p[:-1] for p in partial]
-            _, dec_states, __, pref_attn, _____ = self._run_pred(src, memory_bank,
-                                                          enc_states, batch,
-                                                          partial_pre)
+            _, dec_states, __, pref_attn, _____ = self._run_pred(
+                src, memory_bank,
+                enc_states, batch,
+                partial_pre, src_map=var(batch.src_map.data))
             # Pref attn is word x batch x source
             # This I need to modify in beam
             for b, p in zip(beam, partial):
@@ -310,6 +311,7 @@ class Translator(object):
         memory_bank = rvar(memory_bank.data)
         memory_lengths = src_lengths.repeat(beam_size)
         dec_states.repeat_beam_size_times(beam_size)
+        # print("SRC VOCABS READ", data.src_vocabs[0].itos)
 
         # (3) run the decoder to generate sentences, using beam search.
         for i in range(self.max_length):
@@ -433,7 +435,9 @@ class Translator(object):
             target_extra = [[] for predIx in range(batch.batch_size)]
             for b in resorted:
                 tstates, _, context, attn, decoder_extra = self._run_pred(
-                    src, memory_bank, enc_states, batch, b)
+                    src, memory_bank, 
+                    enc_states, batch, 
+                    b, src_map=var(batch.src_map.data))
                 tstates = tstates.squeeze()
                 context = context.squeeze()
 
@@ -447,7 +451,9 @@ class Translator(object):
                     target_extra[0].append(decoder_extra)
             # Get the top 5 for each time step
             res = self._get_top_k(src, memory_bank, enc_states,
-                                  batch, resorted[0], data=data)
+                                  batch, resorted[0], data=data,
+                                  src_vocab=data.src_vocabs[0],
+                                  src_map=var(batch.src_map.data))
             ret["beam"] = res
             ret["beam_trace"] = trace
 
@@ -488,22 +494,7 @@ class Translator(object):
         # print(ret)
         return ret
 
-    def _compute_src_map(self, src):
-        src_vocab = torchtext.vocab.Vocab(Counter([int(s) for s in src]),
-                                              specials=[0, 
-                                                        1])
-        src_map = torch.LongTensor([src_vocab.stoi[int(w)] for w in src]).unsqueeze(1)
-        src_size = len(src)
-        #print(int(src.max()))
-        src_vocab_size = int(src_map.max()) + 1
-        # print(src_size, src_vocab_size)
-        alignment = torch.zeros(src_size, 1, src_vocab_size)
-        for j, t in enumerate(src_map):
-            alignment[int(j), 0, int(t)] = 1
-        src_map = Variable(alignment)
-        return src_vocab, src_map
-
-    def _run_pred(self, src, context, enc_states, batch, pred):
+    def _run_pred(self, src, context, enc_states, batch, pred, src_map=None):
         tt = torch.cuda if self.cuda else torch
         tgt_pad = self.fields["tgt"].vocab.stoi[onmt.io.PAD_WORD]
         max_len = len(max(pred, key=len))
@@ -529,7 +520,6 @@ class Translator(object):
         decoder_extra = {}
         # Run Generator in Copy attn to get p_copy for each step
         if self.copy_attn:
-            _, src_map = self._compute_src_map(src)
             _, p_copy = self.model.generator.forward(dec_out.squeeze(1),
                                                    attn["copy"].squeeze(1),
                                                    src_map)
@@ -552,17 +542,14 @@ class Translator(object):
                    batch, 
                    pred, 
                    k=5,
-                   data=None):
+                   data=None,
+                   src_map=None,
+                   src_vocab=None):
         """
         Computes the top k predictions for each time step.
         """
         tt = torch.cuda if self.cuda else torch
         tgt_pad = self.fields["tgt"].vocab.stoi[onmt.io.PAD_WORD]
-        if self.copy_attn:
-            src_vocab, src_map = self._compute_src_map(src)
-        else:
-            src_map = None
-
         # print(src_map.shape)
         max_len = len(max(pred, key=len))
         context = context[:, :batch.batch_size, :]
@@ -650,6 +637,12 @@ class Translator(object):
                 # write these into the correct positions d_out -> in decoder states one per step
             out_states.append(c_out)
 
+        def build_target_tokens(src_vocab, tok):
+            vocab = self.fields["tgt"].vocab
+            if tok < len(vocab):
+                return vocab.itos[tok]
+            else:
+                return src_vocab.itos[tok - len(vocab)]
 
         # Assemble reply
         res = {ix:[] for ix in range(tgt_in.size(1))}
@@ -665,13 +658,19 @@ class Translator(object):
                    or t.data[0] == self.fields["tgt"].vocab.stoi["."]:
                     continue
                 current_state = [list(s[:,ix,:].squeeze().numpy().tolist()) for s in stat]
+
+
                 for pr, sc, st in zip(list(pred[ix].numpy()), list(sco[ix].numpy()), current_state):
-                    current_dic = {"pred": int(pr),
+                    pred = build_target_tokens(src_vocab, int(pr))
+                    current_dic = {"pred": pred,
                                    "score": float(sc),
                                    "state": st}
                     outs.append(current_dic)
 
                 res[ix].append(outs)
+        # import pprint
+        # pp = pprint.PrettyPrinter(indent=4)
+        # pp.pprint(res)
         return res
 
     def _run_target(self, batch, data):

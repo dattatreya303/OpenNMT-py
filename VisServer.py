@@ -337,10 +337,12 @@ class ONMTmodelAPI():
 
 
 def main():
-    model = ONMTmodelAPI("models/ada6_bridge_oldcopy_tagged_acc_54.17_ppl_11.17_e20.pt")
+    # model = ONMTmodelAPI("models/ada6_bridge_oldcopy_tagged_acc_54.17_ppl_11.17_e20.pt")
+    model = ONMTmodelAPI("../Seq2Seq-Vis/0316-fakedates/date_acc_100.00_ppl_1.00_e7.pt")
     # model = ONMTmodelAPI("models/ende_acc_46.86_ppl_21.19_e12.pt")
     # Simple Case
-    reply = model.translate(["this is a test ."], dump_data=True)
+    reply = model.translate(["this is a test unibiques ."], dump_data=True)
+    # print(len(reply[0]['decoder'][0]))
     # Case with attn overwrite OR partial
     # reply = model.translate(["this is madness ."], attn_overwrite=[{2:0}])
     # reply = model.translate(["this is madness ."], partial_decode=["das ist"])
