@@ -589,7 +589,7 @@ class NMTModel(nn.Module):
         enc_final, memory_bank = self.encoder(src, lengths)
         enc_state = \
             self.decoder.init_decoder_state(src, memory_bank, enc_final)
-        decoder_outputs, dec_state, attns, weighted_context = self.decoder(
+        decoder_outputs, dec_state, attns, context = self.decoder(
             tgt, memory_bank,
             enc_state if dec_state is None
             else dec_state,
@@ -598,7 +598,7 @@ class NMTModel(nn.Module):
             # Not yet supported on multi-gpu
             dec_state = None
             attns = None
-        return decoder_outputs, attns, dec_state, weighted_context, context
+        return decoder_outputs, attns, dec_state, context, memory_bank
 
 
 class DecoderState(object):
