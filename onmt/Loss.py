@@ -95,7 +95,7 @@ class LossComputeBase(nn.Module):
         range in the decoder output sequence to back propagate in.
         Range is from `(cur_trunc, cur_trunc + trunc_size)`.
 
-        Note sharding is an exact efficiency trick to relieve memory
+        Note harding is an exact efficiency trick to relieve memory
         required for the generation buffers. Truncation is an
         approximate efficiency trick to relieve the memory required
         in the RNN buffers.
@@ -109,7 +109,6 @@ class LossComputeBase(nn.Module):
           cur_trunc (int) : starting position of truncation window
           trunc_size (int) : length of truncation window
           shard_size (int) : maximum number of examples in a shard
-          normalization (int) : Loss is divided by this number
 
         Returns:
             :obj:`onmt.Statistics`: validation loss statistics
@@ -121,6 +120,7 @@ class LossComputeBase(nn.Module):
 
         for shard in shards(shard_state, shard_size):
             loss, stats = self._compute_loss(batch, **shard)
+
             loss.div(normalization).backward()
             batch_stats.update(stats)
 
@@ -158,6 +158,7 @@ class NMTLossCompute(LossComputeBase):
                  label_smoothing=0.0):
         super(NMTLossCompute, self).__init__(generator, tgt_vocab)
         assert (label_smoothing >= 0.0 and label_smoothing <= 1.0)
+
         if label_smoothing > 0:
             # When label smoothing is turned on,
             # KL-divergence between q_{smoothed ground truth prob.}(w)
@@ -189,18 +190,17 @@ class NMTLossCompute(LossComputeBase):
         if self.confidence < 1:
             tdata = gtruth.data
             mask = torch.nonzero(tdata.eq(self.padding_idx)).squeeze()
-            log_likelihood = torch.gather(scores.data, 1, tdata.unsqueeze(1))
+            likelihood = torch.gather(scores.data, 1, tdata.unsqueeze(1))
             tmp_ = self.one_hot.repeat(gtruth.size(0), 1)
             tmp_.scatter_(1, tdata.unsqueeze(1), self.confidence)
             if mask.dim() > 0:
-                log_likelihood.index_fill_(0, mask, 0)
+                likelihood.index_fill_(0, mask, 0)
                 tmp_.index_fill_(0, mask, 0)
             gtruth = Variable(tmp_, requires_grad=False)
+
         loss = self.criterion(scores, gtruth)
         if self.confidence < 1:
-            # Default: report smoothed ppl.
-            # loss_data = -log_likelihood.sum(0)
-            loss_data = loss.data.clone()
+            loss_data = - likelihood.sum(0)
         else:
             loss_data = loss.data.clone()
 
@@ -209,12 +209,11 @@ class NMTLossCompute(LossComputeBase):
         return loss, stats
 
 
-def filter_shard_state(state, requires_grad=True, volatile=False):
+def filter_shard_state(state):
     for k, v in state.items():
         if v is not None:
             if isinstance(v, Variable) and v.requires_grad:
-                v = Variable(v.data, requires_grad=requires_grad,
-                             volatile=volatile)
+                v = Variable(v.data, requires_grad=True, volatile=False)
             yield k, v
 
 
@@ -235,7 +234,7 @@ def shards(state, shard_size, eval=False):
         After the last shard, this function does back-propagation.
     """
     if eval:
-        yield filter_shard_state(state, False, True)
+        yield state
     else:
         # non_none: the subdict of the state dictionary where the values
         # are not None.

@@ -24,13 +24,6 @@ True target sequence (optional)
 * **-output [pred.txt]** 
 Path to output the predictions (each line will be the decoded sequence
 
-* **-report_bleu []** 
-Report bleu score after translation, call tools/multi-bleu.perl on command line
-
-* **-report_rouge []** 
-Report rouge 1/2/3/L/SU4 score after translation call tools/test_rouge.py on
-command line
-
 * **-dynamic_dict []** 
 Create dynamic dictionaries
 
@@ -41,36 +34,14 @@ Share source and target vocabulary
 * **-beam_size [5]** 
 Beam size
 
-* **-min_length []** 
-Minimum prediction length
-
-* **-max_length [100]** 
-Maximum prediction length.
-
-* **-max_sent_length []** 
-Deprecated, use `-max_length` instead
-
-* **-stepwise_penalty []** 
-Apply penalty at every decoding step. Helpful for summary penalty.
-
-* **-length_penalty [none]** 
-Length Penalty to use.
-
-* **-coverage_penalty [none]** 
-Coverage Penalty to use.
-
 * **-alpha []** 
 Google NMT length penalty parameter (higher = longer generation)
 
 * **-beta []** 
 Coverage penalty parameter
 
-* **-block_ngram_repeat []** 
-Block repetition of ngrams during decoding.
-
-* **-ignore_when_blocking []** 
-Ignore these strings when blocking repeats. You want to block sentence
-delimiters.
+* **-max_sent_length [100]** 
+Maximum sentence length.
 
 * **-replace_unk []** 
 Replace the generated UNK tokens with the source token that had highest
@@ -111,3 +82,13 @@ Window stride for spectrogram in seconds
 
 * **-window [hamming]** 
 Window type for spectrogram generation
+
+### **Score**:
+* **-report_bleu []**
+Report bleu score after translation by calling tools/multi-bleu.perl
+on command line.
+
+* **-report_rouge []**
+Report Report rouge 1/2/3/L/SU4 score after translation by calling
+tools/multi-bleu.perl on command line. Use pyrouge as backend. Scores may be
+slightly different with those by calling files2rouge.

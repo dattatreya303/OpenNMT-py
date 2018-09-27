@@ -26,17 +26,12 @@ Source directory for image or audio files.
 * **-save_data []** 
 Output file for the prepared data
 
-* **-max_shard_size []** 
-For text corpus of large volume, it will be divided into shards of this size to
-preprocess. If 0, the data will be handled as a whole. The unit is in bytes.
-Optimal value should be multiples of 64 bytes.
-
 ### **Vocab**:
 * **-src_vocab []** 
-Path to an existing source vocabulary. Format: one word per line.
+Path to an existing source vocabulary
 
 * **-tgt_vocab []** 
-Path to an existing target vocabulary. Format: one word per line.
+Path to an existing target vocabulary
 
 * **-features_vocabs_prefix []** 
 Path prefix to existing features vocabularies

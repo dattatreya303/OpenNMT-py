@@ -1,5 +1,5 @@
 cffi
-torchvision==0.1.8
+torchvision
 librosa
 Pillow
 git+https://github.com/pytorch/audio
