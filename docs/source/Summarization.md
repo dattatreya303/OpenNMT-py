@@ -47,7 +47,7 @@ python preprocess.py -train_src data/cnndm/train.txt.src \
                      -tgt_seq_length_trunc 100 \
                      -dynamic_dict \
                      -share_vocab \
-                     -max_shard_size (500 * 1024 * 1024)
+                     -shard_size 100000
 ```
 
 (2) Gigaword
@@ -61,7 +61,7 @@ python preprocess.py -train_src data/giga/train.article.txt \
                      -src_seq_length 10000 \
                      -dynamic_dict \
                      -share_vocab \
-                     -max_shard_size (500 * 1024 * 1024)
+                     -shard_size 100000
 ```
 
 
@@ -80,7 +80,7 @@ The training procedure described in this section for the most part follows param
 
 
 We are using using a 128-dimensional word-embedding, and 512-dimensional 1 layer LSTM. On the encoder side, we use a bidirectional LSTM (`brnn`), which means that the 512 dimensions are split into 256 dimensions per direction.
-We also use OpenNMT's default learning rate decay, which halves the learning rate after every epoch once the validation perplexity increased after an epoch (or after epoch 8).
+
 We additionally set the maximum norm of the gradient to 2, and renormalize if the gradient norm exceeds this value and do not use any dropout.
 
 **commands used**:
@@ -96,10 +96,11 @@ python train.py -save_model models/cnndm \
                 -rnn_size 512 \
                 -layers 1 \
                 -encoder_type brnn \
-                -epochs 20 \
+                -train_steps 200000 \
                 -max_grad_norm 2 \
                 -dropout 0. \
                 -batch_size 16 \
+                -valid_batch_size 16 \
                 -optim adagrad \
                 -learning_rate 0.15 \
                 -adagrad_accumulator_init 0.1 \
@@ -137,7 +138,7 @@ python -u train.py -data data/cnndm/CNNDM \
                    -batch_type tokens \
                    -normalization tokens \
                    -max_generator_batches 2 \
-                   -epochs 25 \
+                   -train_steps 200000 \
                    -start_checkpoint_at 8 \
                    -accum_count 4 \
                    -share_embeddings \
@@ -156,13 +157,13 @@ python train.py -data data/giga/GIGA \
                 -save_model models/giga \
                 -copy_attn \
                 -reuse_copy_attn \
-                -epochs 20
+                -train_steps 200000
 ```
 
 
 ### Inference
 
-During inference, we use beam-search with a beam-size of 5. We also added specific penalties that we can use during decoding, described in the following.
+During inference, we use beam-search with a beam-size of 10. We also added specific penalties that we can use during decoding, described in the following.
 
 - `stepwise_penalty`: Applies penalty at every step
 - `coverage_penalty summary`: Uses a penalty that prevents repeated attention to the same source word
@@ -179,7 +180,7 @@ During inference, we use beam-search with a beam-size of 5. We also added specif
 ```
 python translate.py -gpu X \
                     -batch_size 20 \
-                    -beam_size 5 \
+                    -beam_size 10 \
                     -model models/cnndm... \
                     -src data/cnndm/test.txt.src \
                     -output testout/cnndm.out \
@@ -207,10 +208,10 @@ The installation instructions can be found [here](https://github.com/falcondai/p
 It can be run with the following command:
 
 ```
-python baseline.py -s testout/cnndm.out -t data/cnndm/test.txt.tgt -m no_sent_tag -r
+python baseline.py -s testout/cnndm.out -t data/cnndm/test.txt.tgt -m sent_tag_verbatim -r
 ```
 
-The `no_sent_tag` option strips tags around sentences - when a sentence previously was `<s> w w w w . </s>`, it becomes `w w w w .`.
+The `sent_tag_verbatim` option strips `<t>` and `</t>` tags around sentences - when a sentence previously was `<t> w w w w . </t>`, it becomes `w w w w .`.
 
 #### Gigaword
 
