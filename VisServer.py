@@ -144,7 +144,6 @@ class ONMTmodelAPI():
 
 
         NEW: 
-        TODO: can we prune? 
 
         {1: {
             # top_k
@@ -186,7 +185,7 @@ class ONMTmodelAPI():
                    ...
                   ]
             # max_txt x beam_size x curr_step
-            beam_trace: [[[int], [int], ...],
+            beam_trace: [[[str], [str], ...],
                          [[hyp, hyp], [hyp, hyp], ...],
                          ...
                         ]
@@ -245,39 +244,74 @@ class ONMTmodelAPI():
             reply[transIx] = res
         return reply
 
+    def dump_data(self):
+        """
+        Writes information from the model to files:
+        - source and tgt dictionaries
+        - Encoder and Decoder embeddings
+        """
+        with open("s2s/src.dict", 'w') as f:
+            for w, ix in self.translator.fields['src'].vocab.stoi.items():
+                f.write(str(ix) + " " + w + "\n")
+        with open("s2s/tgt.dict", 'w') as f:
+            for w, ix in self.translator.fields['tgt'].vocab.stoi.items():
+                f.write(str(ix) + " " + w + "\n")
+        with h5py.File("s2s/embs.h5", 'w') as f:
+            f.create_dataset("encoder", data=self.translator.model.encoder.embeddings.emb_luts[0].weight.data.numpy())
+            f.create_dataset("decoder", data=self.translator.model.decoder.embeddings.emb_luts[0].weight.data.numpy())
 
-    def translate(self, in_text, partial_decode=[], attn_overwrite=[], k=5, attn=None, dump_data=False):
+    def update_translator(self, options={'k':5}):
+        """
+        Based on sent options, we can update the Scorer and other inference parameter
+        """
+
+        # set n_best in translator
+        self.translator.n_best = options['k']
+
+        # Increase Beam size if asked for large k
+        if self.translator.beam_size < options['k']:
+            self.translator.beam_size = options['k']
+
+        # Overwrite Scorer params
+        for key, item in options.items():
+            setattr(self.opt, key, item)
+        # Update max length of prediction
+        self.translator.max_length=self.opt.max_length
+        self.translator.stepwise_penalty=self.opt.stepwise_penalty
+        self.translator.min_length=self.opt.min_length
+        self.translator.block_ngram_repeat=self.opt.block_ngram_repeat
+        self.translator.ignore_when_blocking=self.opt.ignore_when_blocking
+
+        # Set new Global Scorer
+        self.scorer = onmt.translate.GNMTGlobalScorer(
+            self.opt.alpha,
+            self.opt.beta,
+            cov_penalty=self.opt.coverage_penalty, 
+            length_penalty=self.opt.length_penalty)
+        self.translator.global_scorer = self.scorer
+
+
+
+    def translate(self, in_text, partial_decode=[], attn_overwrite=[], inference_options={'k':5}, dump_data=False):
         """
         in_text: list of strings
         partial_decode: list of strings, not implemented yet
+        attn_overwrite: dictionary of which index in decoder has what attention on the encoder
         k: int, number of top translations to return
         attn: list, not implemented yet
         """
 
         # Set batch size to number of requested translations
         self.opt.batch_size = len(in_text)
-        # set n_best in translator
-        self.translator.n_best = k
-        # Increase Beam size if asked for large k
-        if self.translator.beam_size < k:
-            self.translator.beam_size = k
+        self.update_translator(inference_options)
+
+        # Code to extract the source and target dict
+        if dump_data: self.dump_data()
 
         # Write input to file for dataset builder
         with codecs.open("tmp.txt", "w", "utf-8") as f:
             for line in in_text:
                 f.write(line + "\n")
-
-        # Code to extract the source and target dict
-        if dump_data:
-            with open("s2s/src.dict", 'w') as f:
-                for w, ix in self.translator.fields['src'].vocab.stoi.items():
-                    f.write(str(ix) + " " + w + "\n")
-            with open("s2s/tgt.dict", 'w') as f:
-                for w, ix in self.translator.fields['tgt'].vocab.stoi.items():
-                    f.write(str(ix) + " " + w + "\n")
-            with h5py.File("s2s/embs.h5", 'w') as f:
-                f.create_dataset("encoder", data=self.translator.model.encoder.embeddings.emb_luts[0].weight.data.numpy())
-                f.create_dataset("decoder", data=self.translator.model.decoder.embeddings.emb_luts[0].weight.data.numpy())
 
         # Use written file as input to dataset builder
         data = onmt.io.build_dataset(
@@ -341,8 +375,7 @@ def main():
     # model = ONMTmodelAPI("../Seq2Seq-Vis/0316-fakedates/date_acc_100.00_ppl_1.00_e7.pt")
     # model = ONMTmodelAPI("models/ende_acc_46.86_ppl_21.19_e12.pt")
     # Simple Case
-    reply = model.translate(["this is a test unibiques ."], dump_data=True)
-    # print(len(reply[0]['decoder'][0]))
+    reply = model.translate(["this is a test ubiquotus ."], dump_data=True)
     # Case with attn overwrite OR partial
     # reply = model.translate(["this is madness ."], attn_overwrite=[{2:0}])
     # reply = model.translate(["this is madness ."], partial_decode=["das ist"])
