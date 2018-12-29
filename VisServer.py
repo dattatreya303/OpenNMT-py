@@ -375,7 +375,7 @@ def main():
     # model = ONMTmodelAPI("../Seq2Seq-Vis/0316-fakedates/date_acc_100.00_ppl_1.00_e7.pt")
     # model = ONMTmodelAPI("models/ende_acc_46.86_ppl_21.19_e12.pt")
     # Simple Case
-    reply = model.translate(["this is a test ubiquotus ."], dump_data=True)
+    reply = model.translate(["this is a test ubiquotus ."], dump_data=False)
     # Case with attn overwrite OR partial
     # reply = model.translate(["this is madness ."], attn_overwrite=[{2:0}])
     # reply = model.translate(["this is madness ."], partial_decode=["das ist"])
@@ -402,7 +402,7 @@ def main():
     # print(len(reply[0]['decoder']))
     # print(len(reply[0]['decoder'][0]))
     # print(reply[0]['beam_trace'])
-    # print(json.dumps(reply, indent=2, sort_keys=True))
+    print(json.dumps(reply, indent=2, sort_keys=True))
 
 if __name__ == "__main__":
     main()
