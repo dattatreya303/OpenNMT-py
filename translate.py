@@ -1,29 +1,35 @@
 #!/usr/bin/env python
-from __future__ import division, unicode_literals
-import argparse
+# -*- coding: utf-8 -*-
 
-from onmt.translate.Translator import make_translator
+from __future__ import unicode_literals
+import configargparse
 
-import onmt.io
-import onmt.translate
-import onmt
-import onmt.ModelConstructor
-import onmt.modules
-import onmt.opts
+from onmt.utils.logging import init_logger
+from onmt.translate.translator import build_translator
+
+import onmt.opts as opts
 
 
 def main(opt):
-    translator = make_translator(opt, report_score=True)
-    translator.translate(opt.src_dir, opt.src, opt.tgt,
-                         opt.batch_size, opt.attn_debug)
+    translator = build_translator(opt, report_score=True)
+    translator.translate(
+        src=opt.src,
+        tgt=opt.tgt,
+        src_dir=opt.src_dir,
+        batch_size=opt.batch_size,
+        attn_debug=opt.attn_debug
+    )
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(
+    parser = configargparse.ArgumentParser(
         description='translate.py',
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-    onmt.opts.add_md_help_argument(parser)
-    onmt.opts.translate_opts(parser)
+        config_file_parser_class=configargparse.YAMLConfigFileParser,
+        formatter_class=configargparse.ArgumentDefaultsHelpFormatter)
+    opts.config_opts(parser)
+    opts.add_md_help_argument(parser)
+    opts.translate_opts(parser)
 
     opt = parser.parse_args()
+    logger = init_logger(opt.log_file)
     main(opt)
