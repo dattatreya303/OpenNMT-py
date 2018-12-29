@@ -10,10 +10,10 @@ import torch
 
 
 import numpy as np
-import onmt.io
+import onmt.inputters
 import onmt.translate
 import onmt
-import onmt.ModelConstructor
+import onmt.model_builder
 import onmt.modules
 
 from onmt.opts import model_opts, translate_opts
@@ -66,7 +66,7 @@ class ONMTmodelAPI():
 
         # Load the model.
         self.fields, self.model, self.model_opt = \
-            onmt.ModelConstructor.load_test_model(
+            onmt.model_builder.load_test_model(
                 self.opt, self.dummy_opt.__dict__)
 
         # Make GPU decoding possible
@@ -76,20 +76,13 @@ class ONMTmodelAPI():
             torch.cuda.set_device(self.opt.gpu)
 
         # Translator
-        self.scorer = onmt.translate.GNMTGlobalScorer(
-            self.opt.alpha,
-            self.opt.beta,
-            cov_penalty=None, 
-            length_penalty=None)
+        self.scorer = onmt.translate.GNMTGlobalScorer(self.opt)
 
         self.translator = onmt.translate.Translator(
             self.model, self.fields,
-            beam_size=self.opt.beam_size,
-            n_best=self.opt.n_best,
-            global_scorer=self.scorer,
-            max_length=self.opt.max_length,
-            copy_attn=self.model_opt.copy_attn,
-            gpu=self.opt.gpu)
+            self.opt,
+            self.model_opt,
+            global_scorer=self.scorer)
 
 
     def format_payload(self, translation_list, batch_data, in_text):
@@ -226,7 +219,7 @@ class ONMTmodelAPI():
                     currentDec['context'] = cstar.data.tolist()
                     # Extra tgt annotations
                     for key, value in batch_data['target_extra'][transIx][ix].items():
-                        currentDec[key] = float(value[tokIx+1].data[0])
+                        currentDec[key] = float(value[tokIx+1].item())
                     topIx.append(currentDec)
                     topIxAttn.append(attn.tolist())
                     # if t in ['.', '!', '?']:
@@ -283,11 +276,7 @@ class ONMTmodelAPI():
         self.translator.ignore_when_blocking=self.opt.ignore_when_blocking
 
         # Set new Global Scorer
-        self.scorer = onmt.translate.GNMTGlobalScorer(
-            self.opt.alpha,
-            self.opt.beta,
-            cov_penalty=self.opt.coverage_penalty, 
-            length_penalty=self.opt.length_penalty)
+        self.scorer = onmt.translate.GNMTGlobalScorer(self.opt)
         self.translator.global_scorer = self.scorer
 
 
@@ -314,18 +303,21 @@ class ONMTmodelAPI():
                 f.write(line + "\n")
 
         # Use written file as input to dataset builder
-        data = onmt.io.build_dataset(
-            self.fields, self.opt.data_type,
-            "tmp.txt", self.opt.tgt,
+        data = onmt.inputters.build_dataset(
+            self.fields, 
+            self.opt.data_type,
+            "tmp.txt", 
+            tgt=self.opt.tgt,
             src_dir=self.opt.src_dir,
             sample_rate=self.opt.sample_rate,
             window_size=self.opt.window_size,
             window_stride=self.opt.window_stride,
             window=self.opt.window,
-            use_filter_pred=False)
+            use_filter_pred=False,
+            dynamic_dict=self.model_opt.copy_attn)
 
         # Iterating over the single batch... torchtext requirement
-        test_data = onmt.io.OrderedIterator(
+        test_data = onmt.inputters.OrderedIterator(
             dataset=data, device=self.opt.gpu,
             batch_size=self.opt.batch_size, train=False, sort=False,
             sort_within_batch=True,
@@ -353,7 +345,7 @@ class ONMTmodelAPI():
 
         # Run the translation
         batch_data = self.translator.translate_batch(
-            batch, data, 
+            batch, data, False,
             return_states=True,
             partial=partial, 
             attn_overwrite=attn_overwrite)
