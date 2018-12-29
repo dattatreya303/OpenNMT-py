@@ -4,7 +4,7 @@ import time
 import math
 import sys
 
-from torch.distributed import get_rank
+# from torch.distributed import get_rank
 from onmt.utils.distributed import all_gather_list
 from onmt.utils.logging import logger
 
@@ -57,7 +57,7 @@ class Statistics(object):
         """
         # Get a list of world_size lists with len(stat_list) Statistics objects
         all_stats = all_gather_list(stat_list, max_size=max_size)
-
+        print(all_stats)
         our_rank = get_rank()
         our_stats = all_stats[our_rank]
         for other_rank, stats in enumerate(all_stats):

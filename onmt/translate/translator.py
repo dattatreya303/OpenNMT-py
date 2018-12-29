@@ -8,6 +8,7 @@ import math
 
 import torch
 
+from copy import deepcopy
 from itertools import count
 from onmt.utils.misc import tile
 
@@ -277,14 +278,9 @@ class Translator(object):
                       codecs.open(self.dump_beam, 'w', 'utf-8'))
         return all_scores, all_predictions
 
-    def translate_batch(self, 
-                        batch,
-                        data, 
-                        attn_debug, 
-                        fast=False, 
-                        return_states=False, 
-                        partial=[], 
-                        attn_overwrite=[]):
+    def translate_batch(self, batch, data, attn_debug, 
+                        fast=False, return_states=False, 
+                        partial=[], attn_overwrite=[]):
         """
         Translate a batch of sentences.
 
@@ -308,7 +304,10 @@ class Translator(object):
                     n_best=self.n_best,
                     return_attention=attn_debug or self.replace_unk)
             else:
-                return self._translate_batch(batch, data, return_states, partial, attn_overwrite)
+                return self._translate_batch(batch, data, 
+                                             return_states=return_states, 
+                                             partial=partial, 
+                                             attn_overwrite=attn_overwrite)
 
     def _run_encoder(self, batch, data_type):
         src = inputters.make_features(batch, 'src', data_type)
@@ -468,7 +467,7 @@ class Translator(object):
         for step in range(max_length):
             decoder_input = alive_seq[:, -1].view(1, -1, 1)
 
-            log_probs, attn, contexts, p_copy = self._decode_and_generate(
+            log_probs, attn = self._decode_and_generate(
                 decoder_input,
                 memory_bank,
                 batch,
@@ -594,7 +593,10 @@ class Translator(object):
 
         return results
 
-    def _translate_batch(self, batch, data, return_states=False, partial=[], attn_overwrite=[]):
+    def _translate_batch(self, batch, data,  
+                         return_states=False, 
+                         partial=[], 
+                         attn_overwrite=[]):
         # (0) Prep each of the components of the search.
         # And helper method for reducing verbosity.
         beam_size = self.beam_size
@@ -621,15 +623,18 @@ class Translator(object):
         # (1) Run the encoder on the src.
         src, enc_states, memory_bank, src_lengths = self._run_encoder(
             batch, data_type)
+
         words_so_far = 0
+        # If we have partial translation, run decoder over them
         pref_attn = None
         if partial:
             print("partial in Translator", partial)
             partial_pre = [p[:-1] for p in partial]
-            _, dec_states, __, pref_attn, _____ = self._run_pred(
+            dec_states, _, pref_attn, __ = self._run_pred(
                 src, memory_bank,
                 enc_states, batch,
-                partial_pre, src_map=batch.src_map.data)
+                partial_pre, pad, bos,
+                src_map=batch.src_map.data)
             # Pref attn is word x batch x source
             # This I need to modify in beam
             for b, p in zip(beam, partial):
@@ -648,7 +653,8 @@ class Translator(object):
         if "tgt" in batch.__dict__:
             results["gold_score"] = self._score_target(
                 batch, memory_bank, src_lengths, data, batch.src_map
-                if data_type == 'text' and self.copy_attn else None)
+                if data_type == 'text' and self.copy_attn else None,
+                pad)
             self.model.decoder.init_state(src, memory_bank, enc_states)
         else:
             results["gold_score"] = [0] * batch_size
@@ -694,12 +700,12 @@ class Translator(object):
                 select_indices_array.append(
                     b.get_current_origin() + j * beam_size)
             select_indices = torch.cat(select_indices_array)
-            words_so_far += 1
 
             self.model.decoder.map_state(
                 lambda state, dim: state.index_select(dim, select_indices))
 
         # (4) Extract sentences from beam.
+         # (4) Extract sentences from beam.
         ret = self._from_beam(beam, partial, pref_attn)
 
         def build_target_tokens(src_vocab, tok):
@@ -770,10 +776,11 @@ class Translator(object):
             target_context = [[] for predIx in range(batch.batch_size)]
             target_extra = [[] for predIx in range(batch.batch_size)]
             for b in resorted:
-                tstates, _, context, attn, decoder_extra = self._run_pred(
+                tstates, context, attn, decoder_extra = self._run_pred(
                     src, memory_bank, 
                     enc_states, batch, 
-                    b, src_map=var(batch.src_map.data))
+                    b, pad, bos,
+                    src_map=batch.src_map.data)
                 tstates = tstates.squeeze()
                 context = context.squeeze()
 
@@ -787,9 +794,10 @@ class Translator(object):
                     target_extra[0].append(decoder_extra)
             # Get the top 5 for each time step
             res = self._get_top_k(src, memory_bank, enc_states,
-                                  batch, resorted[0], data=data,
+                                  batch, resorted[0], pad, bos, eos,
+                                  data=data,
                                   src_vocab=data.src_vocabs[0],
-                                  src_map=var(batch.src_map.data))
+                                  src_map=batch.src_map.data)
             ret["beam"] = res
             ret["beam_trace"] = trace
 
@@ -800,45 +808,86 @@ class Translator(object):
             # Todo: add copy attn if applicable, add copy switch for each step
         return ret
 
+    def _from_beam(self, beam, partial=[], pref_attn=None):
+        ret = {"predictions": [],
+               "scores": [],
+               "attention": []}
+        for j, b in enumerate(beam):
+            n_best = self.n_best
+            scores, ks = b.sort_finished(minimum=n_best)
+            hyps, attn = [], []
+            if partial:
+                prefix = partial[j]
+                prev_attn = pref_attn[:,j,:].data.squeeze(1)
+            else:
+                prefix = []
+            for i, (times, k) in enumerate(ks[:n_best]):
+                # print(times)
+                # for ix in range(times):
+                #     h, _ = b.get_hyp(ix, k)
+                #     print(h)
+                hyp, att = b.get_hyp(times, k)
+                if partial:
+                    src_width = att.size(1)
+                    att = torch.cat([prev_attn[:,:src_width], att], dim=0)
+                hyps.append(prefix + hyp)
+                attn.append(att)
+            ret["predictions"].append(hyps)
+            ret["scores"].append(scores)
+            ret["attention"].append(attn)
+        # print(ret)
+        return ret
 
-    def _run_target(self, batch, data):
-        data_type = data.data_type
-        if data_type == 'text':
-            _, src_lengths = batch.src
-        else:
-            src_lengths = None
-        src = onmt.io.make_features(batch, 'src', data_type)
-        tgt_in = onmt.io.make_features(batch, 'tgt')[:-1]
-
-        #  (1) run the encoder on the src
-        enc_states, memory_bank = self.model.encoder(src, src_lengths)
-        dec_states = \
-            self.model.decoder.init_decoder_state(src, memory_bank, enc_states)
-
-        #  (2) if a target is specified, compute the 'goldScore'
-        #  (i.e. log likelihood) of the target under the model
+    def _run_pred(self, src, memory_bank, enc_states, 
+                  batch, pred, tgt_pad, tgt_bos,
+                  src_map=None):
         tt = torch.cuda if self.cuda else torch
-        gold_scores = tt.FloatTensor(batch.batch_size).fill_(0)
-        dec_out, _, _ = self.model.decoder(
-            tgt_in, memory_bank, dec_states, memory_lengths=src_lengths)
+        max_len = len(max(pred, key=len))
+        memory_bank = memory_bank[:, :batch.batch_size, :]
+        pred_in = []
+        for p in pred:
+            while len(p) < max_len:
+                p.append(tgt_pad)
+            p = [tgt_bos] + p
+            pred_in.append(tt.LongTensor(p).unsqueeze(1))
+        decoder_in = torch.stack(pred_in, 1)
+        # Set copied OOV words to UNK
+        if self.copy_attn:
+            decoder_in = decoder_in.masked_fill(
+                decoder_in.gt(len(self.fields["tgt"].vocab) - 1), 0)
+        self.model.decoder.init_state(src, memory_bank, enc_states)
+        _, memory_lengths = batch.src
 
-        tgt_pad = self.fields["tgt"].vocab.stoi[onmt.io.PAD_WORD]
-        for dec, tgt in zip(dec_out, batch.tgt[1:].data):
-            # Log prob of each word.
-            out = self.model.generator.forward(dec)
-            tgt = tgt.unsqueeze(1)
-            scores = out.data.gather(1, tgt)
-            scores.masked_fill_(tgt.eq(tgt_pad), 0)
-            gold_scores += scores
-        return gold_scores
+        dec_out, attn, contexts = self.model.decoder(
+            decoder_in, memory_bank, memory_lengths=memory_lengths)
 
+        decoder_extra = {}
+        # Run Generator in Copy attn to get p_copy for each step
+        if self.copy_attn:
+            _, p_copy = self.model.generator.forward(dec_out.squeeze(1),
+                                                   attn["copy"].squeeze(1),
+                                                   src_map)
+            decoder_extra['p_copy'] = p_copy.squeeze(1)
+
+        # Special case -> only <s> gets fed
+        try:
+            dec_out_ret = dec_out[1:]
+            weighted_context_ret = contexts[:, 1:]
+        except:
+            dec_out_ret = None
+            weighted_context_ret = None
+
+        return dec_out_ret, weighted_context_ret, attn['std'], decoder_extra
 
     def _get_top_k(self, 
                    src, 
                    context, 
                    enc_states, 
                    batch, 
-                   pred, 
+                   pred,
+                   tgt_pad,
+                   tgt_bos,
+                   tgt_eos,
                    k=5,
                    data=None,
                    src_map=None,
@@ -847,7 +896,6 @@ class Translator(object):
         Computes the top k predictions for each time step.
         """
         tt = torch.cuda if self.cuda else torch
-        tgt_pad = self.fields["tgt"].vocab.stoi[onmt.io.PAD_WORD]
         # print(src_map.shape)
         max_len = len(max(pred, key=len))
         context = context[:, :batch.batch_size, :]
@@ -855,21 +903,21 @@ class Translator(object):
         for p in pred:
             while len(p) < max_len:
                 p.append(tgt_pad)
-            p = [self.fields["tgt"].vocab.stoi[onmt.io.BOS_WORD]] + p[:-2]
+            p = [tgt_bos] + p[:-2]
             pred_in.append(tt.LongTensor(p).unsqueeze(1))
-        tgt_in = Variable(torch.stack(pred_in, 1))
+        tgt_in = torch.stack(pred_in, 1)
         # Set copied OOV words to UNK
         if self.copy_attn:
             tgt_in = tgt_in.masked_fill(
                 tgt_in.gt(len(self.fields["tgt"].vocab) - 1), 0)
 
 
-        dec_states = self.model.decoder.init_decoder_state(
+        self.model.decoder.init_state(
             src, context, enc_states)
         _, src_lengths = batch.src
 
-        dec_out, dec_states, attn, __ = self.model.decoder(
-            tgt_in, context, dec_states, memory_lengths=src_lengths)
+        dec_out, attn, __ = self.model.decoder(
+            tgt_in, context, memory_lengths=src_lengths)
         alt_preds = []
         alt_scores = []
         if not self.copy_attn:
@@ -915,22 +963,23 @@ class Translator(object):
 
         # Construct new inputs
         out_states = []
-        dec_states = self.model.decoder.init_decoder_state(
-                    src, context, enc_states)
+        self.model.decoder.init_state(
+            src, context, enc_states)
         for ix, t in enumerate(tgt_in.data):
             alt = torch.stack(alt_preds[ix]).view(k, -1).unsqueeze(2)
             prev = tgt_in.data[:ix+1]
             # Precompute initial state
-            dec_out, dec_states, _, __ = self.model.decoder(
-                tgt_in[ix].unsqueeze(0), context, dec_states, memory_lengths=src_lengths)
-            fix_dec_states = deepcopy(dec_states)
+            dec_out, _, __ = self.model.decoder(
+                tgt_in[ix].unsqueeze(0), context, memory_lengths=src_lengths)
+            fix_dec_states = deepcopy(self.model.decoder.state)
             c_out = []
             for ix2, a in enumerate(alt):
                 # Forward the latest tokens
                 if int(a) > len(self.fields["tgt"].vocab) -1:
                     a = a.fill_(0)
-                d_out, d_states, _, __ = self.model.decoder(
-                    Variable(a.unsqueeze(0)), context, fix_dec_states, memory_lengths=src_lengths)
+                self.model.decoder.state = deepcopy(fix_dec_states)
+                d_out, _, __ = self.model.decoder(
+                    a.unsqueeze(0), context, memory_lengths=src_lengths)
                 c_out.append(d_out.data)
                 # write these into the correct positions d_out -> in decoder states one per step
             out_states.append(c_out)
@@ -952,7 +1001,7 @@ class Translator(object):
                 # ignore padding in here
 
                 if t.data[0] == tgt_pad \
-                   or t.data[0] == self.fields["tgt"].vocab.stoi[onmt.io.EOS_WORD] \
+                   or t.data[0] == tgt_eos \
                    or t.data[0] == self.fields["tgt"].vocab.stoi["."]:
                     continue
                 current_state = [list(s[:,ix,:].squeeze().numpy().tolist()) for s in stat]
@@ -971,85 +1020,12 @@ class Translator(object):
         # pp.pprint(res)
         return res
 
-    def _from_beam(self, beam, partial=[], pref_attn=None):
-        ret = {"predictions": [],
-               "scores": [],
-               "attention": []}
-        for j, b in enumerate(beam):
-            n_best = self.n_best
-            scores, ks = b.sort_finished(minimum=n_best)
-            hyps, attn = [], []
-            if partial:
-                prefix = partial[j]
-                prev_attn = pref_attn[:,j,:].data.squeeze(1)
-            else:
-                prefix = []
-            for i, (times, k) in enumerate(ks[:n_best]):
-                # print(times)
-                # for ix in range(times):
-                #     h, _ = b.get_hyp(ix, k)
-                #     print(h)
-                hyp, att = b.get_hyp(times, k)
-                if partial:
-                    src_width = att.size(1)
-                    att = torch.cat([prev_attn[:,:src_width], att], dim=0)
-                hyps.append(prefix + hyp)
-                attn.append(att)
-            ret["predictions"].append(hyps)
-            ret["scores"].append(scores)
-            ret["attention"].append(attn)
-        # print(ret)
-        return ret
-
-
-    def _run_pred(self, src, context, enc_states, batch, pred, src_map=None):
-        tt = torch.cuda if self.cuda else torch
-        tgt_pad = self.fields["tgt"].vocab.stoi[onmt.io.PAD_WORD]
-        max_len = len(max(pred, key=len))
-        context = context[:, :batch.batch_size, :]
-        pred_in = []
-        for p in pred:
-            while len(p) < max_len:
-                p.append(tgt_pad)
-            p = [self.fields["tgt"].vocab.stoi[onmt.io.BOS_WORD]] + p
-            pred_in.append(tt.LongTensor(p).unsqueeze(1))
-        tgt_in = Variable(torch.stack(pred_in, 1))
-        # Set copied OOV words to UNK
-        if self.copy_attn:
-            tgt_in = tgt_in.masked_fill(
-                tgt_in.gt(len(self.fields["tgt"].vocab) - 1), 0)
-        dec_states = self.model.decoder.init_decoder_state(
-            src, context, enc_states)
-        _, src_lengths = batch.src
-
-        dec_out, dec_states, attn, weighted_context = self.model.decoder(
-            tgt_in, context, dec_states, memory_lengths=src_lengths)
-
-        decoder_extra = {}
-        # Run Generator in Copy attn to get p_copy for each step
-        if self.copy_attn:
-            _, p_copy = self.model.generator.forward(dec_out.squeeze(1),
-                                                   attn["copy"].squeeze(1),
-                                                   src_map)
-            decoder_extra['p_copy'] = p_copy.squeeze(1)
-
-        # Special case -> only <s> gets fed
-        try:
-            dec_out_ret = dec_out[1:]
-            weighted_context_ret = weighted_context[:, 1:]
-        except:
-            dec_out_ret = None
-            weighted_context_ret = None
-
-        return dec_out_ret, dec_states, weighted_context_ret, attn['std'], decoder_extra
-
-    def _score_target(self, batch, memory_bank, src_lengths, data, src_map):
+    def _score_target(self, batch, memory_bank, src_lengths, data, src_map, tgt_pad):
         tgt_in = inputters.make_features(batch, 'tgt')[:-1]
 
-        log_probs, attn, contexts, p_copy = self._decode_and_generate(
+        log_probs, attn = self._decode_and_generate(
             tgt_in, memory_bank, batch, data,
             memory_lengths=src_lengths, src_map=src_map)
-        tgt_pad = self.fields["tgt"].vocab.stoi[self.fields["tgt"].pad_token]
 
         log_probs[:, :, tgt_pad] = 0
         gold = batch.tgt[1:].unsqueeze(2)

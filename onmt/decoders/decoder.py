@@ -140,7 +140,7 @@ class RNNDecoderBase(nn.Module):
         self.state["input_feed"] = self.state["input_feed"].detach()
 
     def forward(self, tgt, memory_bank, memory_lengths=None,
-                step=None):
+                step=None, attn_overwrite=[]):
         """
         Args:
             tgt (`LongTensor`): sequences of padded tokens
@@ -157,8 +157,9 @@ class RNNDecoderBase(nn.Module):
                         `[tgt_len x batch x src_len]`.
         """
         # Run the forward pass of the RNN.
-        dec_state, dec_outs, attns = self._run_forward_pass(
-            tgt, memory_bank, memory_lengths=memory_lengths)
+        dec_state, dec_outs, attns, contexts = self._run_forward_pass(
+            tgt, memory_bank, memory_lengths=memory_lengths, 
+            attn_overwrite=attn_overwrite)
 
         # Update the state with the result.
         if not isinstance(dec_state, tuple):
@@ -181,7 +182,7 @@ class RNNDecoderBase(nn.Module):
                 if type(attns[k]) == list:
                     attns[k] = torch.stack(attns[k])
         # TODO change the way attns is returned dict => list or tuple (onnx)
-        return dec_outs, attns
+        return dec_outs, attns, contexts
 
 
 class StdRNNDecoder(RNNDecoderBase):
@@ -300,7 +301,7 @@ class InputFeedRNNDecoder(RNNDecoderBase):
           G --> H
     """
 
-    def _run_forward_pass(self, tgt, memory_bank, memory_lengths=None):
+    def _run_forward_pass(self, tgt, memory_bank, memory_lengths=None, attn_overwrite=[]):
         """
         See StdRNNDecoder._run_forward_pass() for description
         of arguments and return values.
@@ -329,14 +330,17 @@ class InputFeedRNNDecoder(RNNDecoderBase):
 
         # Input feed concatenates hidden state with
         # input at every time step.
+        contexts = []
         for _, emb_t in enumerate(emb.split(1)):
             emb_t = emb_t.squeeze(0)
             decoder_input = torch.cat([emb_t, input_feed], 1)
             rnn_output, dec_state = self.rnn(decoder_input, dec_state)
-            decoder_output, p_attn = self.attn(
+            decoder_output, p_attn, weighted_context = self.attn(
                 rnn_output,
                 memory_bank.transpose(0, 1),
-                memory_lengths=memory_lengths)
+                memory_lengths=memory_lengths,
+                overwrite=attn_overwrite)
+            contexts += [weighted_context]
             if self.context_gate is not None:
                 # TODO: context gate should be employed
                 # instead of second RNN transform.
@@ -362,8 +366,10 @@ class InputFeedRNNDecoder(RNNDecoderBase):
                 attns["copy"] += [copy_attn]
             elif self._copy:
                 attns["copy"] = attns["std"]
+        contexts = torch.cat(contexts, 1)
+
         # Return result.
-        return dec_state, dec_outs, attns
+        return dec_state, dec_outs, attns, contexts
 
     def _build_rnn(self, rnn_type, input_size,
                    hidden_size, num_layers, dropout):

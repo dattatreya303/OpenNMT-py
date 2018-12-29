@@ -93,7 +93,7 @@ class CopyGenerator(nn.Module):
             src_map.transpose(0, 1)
         ).transpose(0, 1)
         copy_prob = copy_prob.contiguous().view(-1, cvocab)
-        return torch.cat([out_prob, copy_prob], 1)
+        return torch.cat([out_prob, copy_prob], 1), p_copy
 
 
 class CopyGeneratorLoss(nn.Module):
@@ -174,7 +174,7 @@ class CopyGeneratorLossCompute(LossComputeBase):
         """
         target = target.view(-1)
         align = align.view(-1)
-        scores = self.generator(
+        scores, _ = self.generator(
             self._bottle(output), self._bottle(copy_attn), batch.src_map
         )
         loss = self.criterion(scores, align, target)

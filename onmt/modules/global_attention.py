@@ -181,10 +181,6 @@ class GlobalAttention(nn.Module):
             mask = sequence_mask(memory_lengths, max_len=align.size(-1))
             mask = mask.unsqueeze(1)  # Make it broadcastable.
             align.masked_fill_(1 - mask, -float('inf'))
-
-        # Softmax to normalize attention weights
-        align_vectors = self.sm(align.view(batch*targetL, sourceL))
-        align_vectors = align_vectors.view(batch, targetL, sourceL)
         
         # Softmax or sparsemax to normalize attention weights
         if self.attn_func == "softmax":
