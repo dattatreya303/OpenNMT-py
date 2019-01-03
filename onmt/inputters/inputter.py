@@ -190,7 +190,6 @@ def build_dataset(fields, data_type,
                   src_dir=None,
                   tgt_data_iter=None,
                   tgt_path=None,
-                  tag_path=None,
                   src_seq_length=0,
                   tgt_seq_length=0,
                   src_seq_length_trunc=0,
@@ -255,13 +254,11 @@ def build_dataset(fields, data_type,
         TextDataset.make_text_examples_nfeats_tpl(
             tgt_data_iter, tgt_path, tgt_seq_length_trunc, "tgt")
 
-    tag_examples_iter = TextDataset.make_tag_iter(tag_path)
 
     if data_type == 'text':
         dataset = TextDataset(fields,
                               src_examples_iter,
                               tgt_examples_iter,
-                              tag_examples_iter,
                               num_src_feats, num_tgt_feats,
                               src_seq_length=src_seq_length,
                               tgt_seq_length=tgt_seq_length,

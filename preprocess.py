@@ -49,7 +49,6 @@ def parse_args():
 
 def build_save_in_shards_using_shards_size(src_corpus,
                                            tgt_corpus,
-                                           tag_corpus,
                                            fields,
                                            corpus_type,
                                            opt):
@@ -64,55 +63,42 @@ def build_save_in_shards_using_shards_size(src_corpus,
 
     with codecs.open(src_corpus, "r", encoding="utf-8") as fsrc:
         with codecs.open(tgt_corpus, "r", encoding="utf-8") as ftgt:
-            with codecs.open(tag_corpus, "r", encoding="utf-8") as ftag:
 
-                logger.info("Reading source and target files: %s %s %s."
-                            % (src_corpus, tgt_corpus, tag_corpus))
-                src_data = fsrc.readlines()
-                tgt_data = ftgt.readlines()
-                tag_data = ftag.readlines()
+            logger.info("Reading source and target files: %s %s."
+                        % (src_corpus, tgt_corpus))
+            src_data = fsrc.readlines()
+            tgt_data = ftgt.readlines()
 
-                num_shards = int(len(src_data) / opt.shard_size)
-                for x in range(num_shards):
-                    logger.info("Splitting shard %d." % x)
-                    f = codecs.open(src_corpus + ".{0}.txt".format(x), "w",
-                                    encoding="utf-8")
-                    f.writelines(
-                            src_data[x * opt.shard_size: (x + 1) * opt.shard_size])
-                    f.close()
-                    f = codecs.open(tgt_corpus + ".{0}.txt".format(x), "w",
-                                    encoding="utf-8")
-                    f.writelines(
-                            tgt_data[x * opt.shard_size: (x + 1) * opt.shard_size])
-                    f.close()
-                    f = codecs.open(tag_corpus + ".{0}.txt".format(x), "w",
-                                    encoding="utf-8")
-                    f.writelines(
-                            tag_data[x * opt.shard_size: (x + 1) * opt.shard_size])
-                    f.close()
+            num_shards = int(len(src_data) / opt.shard_size)
+            for x in range(num_shards):
+                logger.info("Splitting shard %d." % x)
+                f = codecs.open(src_corpus + ".{0}.txt".format(x), "w",
+                                encoding="utf-8")
+                f.writelines(
+                        src_data[x * opt.shard_size: (x + 1) * opt.shard_size])
+                f.close()
+                f = codecs.open(tgt_corpus + ".{0}.txt".format(x), "w",
+                                encoding="utf-8")
+                f.writelines(
+                        tgt_data[x * opt.shard_size: (x + 1) * opt.shard_size])
+                f.close()
 
-                num_written = num_shards * opt.shard_size
-                if len(src_data) > num_written:
-                    logger.info("Splitting shard %d." % num_shards)
-                    f = codecs.open(src_corpus + ".{0}.txt".format(num_shards),
-                                    'w', encoding="utf-8")
-                    f.writelines(
-                            src_data[num_shards * opt.shard_size:])
-                    f.close()
-                    f = codecs.open(tgt_corpus + ".{0}.txt".format(num_shards),
-                                    'w', encoding="utf-8")
-                    f.writelines(
-                            tgt_data[num_shards * opt.shard_size:])
-                    f.close()
-                    f = codecs.open(tag_corpus + ".{0}.txt".format(num_shards),
-                                    'w', encoding="utf-8")
-                    f.writelines(
-                            tag_data[num_shards * opt.shard_size:])
-                    f.close()
+            num_written = num_shards * opt.shard_size
+            if len(src_data) > num_written:
+                logger.info("Splitting shard %d." % num_shards)
+                f = codecs.open(src_corpus + ".{0}.txt".format(num_shards),
+                                'w', encoding="utf-8")
+                f.writelines(
+                        src_data[num_shards * opt.shard_size:])
+                f.close()
+                f = codecs.open(tgt_corpus + ".{0}.txt".format(num_shards),
+                                'w', encoding="utf-8")
+                f.writelines(
+                        tgt_data[num_shards * opt.shard_size:])
+                f.close()
 
     src_list = sorted(glob.glob(src_corpus + '.*.txt'))
     tgt_list = sorted(glob.glob(tgt_corpus + '.*.txt'))
-    tag_list = sorted(glob.glob(tag_corpus + '.*.txt'))
 
     ret_list = []
 
@@ -122,7 +108,6 @@ def build_save_in_shards_using_shards_size(src_corpus,
             fields, opt.data_type,
             src_path=src,
             tgt_path=tgt_list[index],
-            tag_path=tag_list[index],
             src_dir=opt.src_dir,
             src_seq_length=opt.src_seq_length,
             tgt_seq_length=opt.tgt_seq_length,
@@ -164,17 +149,14 @@ def build_save_dataset(corpus_type, fields, opt):
     if corpus_type == 'train':
         src_corpus = opt.train_src
         tgt_corpus = opt.train_tgt
-        tag_corpus = opt.train_tags
     else:
         src_corpus = opt.valid_src
         tgt_corpus = opt.valid_tgt
-        tag_corpus = opt.valid_tags
 
 
     if (opt.shard_size > 0):
         return build_save_in_shards_using_shards_size(src_corpus,
                                                       tgt_corpus,
-                                                      tag_corpus,
                                                       fields,
                                                       corpus_type,
                                                       opt)
@@ -187,7 +169,6 @@ def build_save_dataset(corpus_type, fields, opt):
         fields, opt.data_type,
         src_path=src_corpus,
         tgt_path=tgt_corpus,
-        tag_path=tag_corpus,
         src_dir=opt.src_dir,
         src_seq_length=opt.src_seq_length,
         tgt_seq_length=opt.tgt_seq_length,
