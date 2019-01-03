@@ -65,7 +65,7 @@ class LossComputeBase(nn.Module):
         """
         return NotImplementedError
 
-    def monolithic_compute_loss(self, batch, output, attns, tags, align):
+    def monolithic_compute_loss(self, batch, output, attns):
         """
         Compute the forward loss for the batch.
 
@@ -80,14 +80,14 @@ class LossComputeBase(nn.Module):
             :obj:`onmt.Statistics`: loss statistics
         """
         range_ = (0, batch.tgt.size(0))
-        shard_state = self._make_shard_state(batch, output, tags, range_, attns, batch.tag, align)
+        shard_state = self._make_shard_state(batch, output, range_, attns)
         _, batch_stats = self._compute_loss(batch, **shard_state)
 
         return batch_stats
 
     def sharded_compute_loss(self, batch, output, attns,
                              cur_trunc, trunc_size, shard_size,
-                             normalization, tags, align):
+                             normalization):
         """Compute the forward loss and backpropagate.  Computation is done
         with shards and optionally truncation for memory efficiency.
 
@@ -117,11 +117,13 @@ class LossComputeBase(nn.Module):
         """
         batch_stats = onmt.Statistics()
         range_ = (cur_trunc, cur_trunc + trunc_size)
-        shard_state = self._make_shard_state(batch, output, tags, range_, attns, batch.tag, align)
+        shard_state = self._make_shard_state(batch, output, range_, attns)
+
         for shard in shards(shard_state, shard_size):
             loss, stats = self._compute_loss(batch, **shard)
             loss.div(normalization).backward()
             batch_stats.update(stats)
+
         return batch_stats
 
     def _stats(self, loss, scores, target):
@@ -256,11 +258,8 @@ def shards(state, shard_size, eval=False):
         for shard_tensors in zip(*values):
             yield dict(zip(keys, shard_tensors))
 
-
         # Assumed backprop'd
         variables = ((state[k], v.grad.data) for k, v in non_none.items()
                      if isinstance(v, Variable) and v.grad is not None)
         inputs, grads = zip(*variables)
-        # print(inputs, grads)
-        # print("grads", [g[:3] for g in grads])
         torch.autograd.backward(inputs, grads)

@@ -138,6 +138,7 @@ class RNNEncoder(EncoderBase):
 
         emb = self.embeddings(src)
         s_len, batch, emb_dim = emb.size()
+
         packed_emb = emb
         if lengths is not None and not self.no_pack_padded_seq:
             # Lengths data is wrapped inside a Variable.
@@ -306,9 +307,12 @@ class RNNDecoderBase(nn.Module):
         _, memory_batch, _ = memory_bank.size()
         aeq(tgt_batch, memory_batch)
         # END
+
         # Run the forward pass of the RNN.
-        decoder_final, decoder_outputs, attns, align = self._run_forward_pass(
-            tgt, memory_bank, state, memory_lengths=memory_lengths)
+        decoder_final, decoder_outputs, attns = self._run_forward_pass(
+            tgt, memory_bank, state,
+            memory_lengths=memory_lengths,
+            tags=tags)
 
         # Update the state with the result.
         final_output = decoder_outputs[-1]
@@ -322,9 +326,7 @@ class RNNDecoderBase(nn.Module):
         for k in attns:
             attns[k] = torch.stack(attns[k])
 
-        align = torch.stack(align)
-
-        return decoder_outputs, state, attns, align
+        return decoder_outputs, state, attns
 
     def init_decoder_state(self, src, memory_bank, encoder_final):
         def _fix_enc_hidden(h):
@@ -384,6 +386,7 @@ class StdRNNDecoder(RNNDecoderBase):
         # Initialize local and return variables.
         attns = {}
         emb = self.embeddings(tgt)
+
         # Run the forward pass of the RNN.
         if isinstance(self.rnn, nn.GRU):
             rnn_output, decoder_final = self.rnn(emb, state.hidden[0])
@@ -398,7 +401,7 @@ class StdRNNDecoder(RNNDecoderBase):
         # END
 
         # Calculate the attention.
-        decoder_outputs, p_attn, align = self.attn(
+        decoder_outputs, p_attn = self.attn(
             rnn_output.transpose(0, 1).contiguous(),
             memory_bank.transpose(0, 1),
             memory_lengths=memory_lengths
@@ -457,8 +460,7 @@ class InputFeedRNNDecoder(RNNDecoderBase):
           G --> H
     """
 
-    def _run_forward_pass(self, tgt, memory_bank, state,
-                          memory_lengths=None):
+    def _run_forward_pass(self, tgt, memory_bank, state, memory_lengths=None, tags=[]):
         """
         See StdRNNDecoder._run_forward_pass() for description
         of arguments and return values.
@@ -477,8 +479,6 @@ class InputFeedRNNDecoder(RNNDecoderBase):
             attns["copy"] = []
         if self._coverage:
             attns["coverage"] = []
-        # Alignment for copy masking
-        copy_align = []
 
         emb = self.embeddings(tgt)
         assert emb.dim() == 3  # len x batch x embedding_dim
@@ -494,7 +494,7 @@ class InputFeedRNNDecoder(RNNDecoderBase):
             decoder_input = torch.cat([emb_t, input_feed], 1)
 
             rnn_output, hidden = self.rnn(decoder_input, hidden)
-            decoder_output, p_attn, align = self.attn(
+            decoder_output, p_attn = self.attn(
                 rnn_output,
                 memory_bank.transpose(0, 1),
                 memory_lengths=memory_lengths)
@@ -509,7 +509,6 @@ class InputFeedRNNDecoder(RNNDecoderBase):
 
             decoder_outputs += [decoder_output]
             attns["std"] += [p_attn]
-            copy_align += [align]
 
             # Update the coverage attention.
             if self._coverage:
@@ -519,13 +518,13 @@ class InputFeedRNNDecoder(RNNDecoderBase):
 
             # Run the forward pass of the copy attention layer.
             if self._copy and not self._reuse_copy_attn:
-                _, copy_attn, __ = self.copy_attn(decoder_output,
+                _, copy_attn = self.copy_attn(decoder_output,
                                               memory_bank.transpose(0, 1))
                 attns["copy"] += [copy_attn]
             elif self._copy:
                 attns["copy"] = attns["std"]
         # Return result.
-        return hidden, decoder_outputs, attns, copy_align
+        return hidden, decoder_outputs, attns
 
     def _build_rnn(self, rnn_type, input_size,
                    hidden_size, num_layers, dropout):
@@ -556,12 +555,11 @@ class NMTModel(nn.Module):
       decoder (:obj:`RNNDecoderBase`): a decoder object
       multi<gpu (bool): setup for multigpu support
     """
-    def __init__(self, encoder, decoder, tagger, multigpu=False):
+    def __init__(self, encoder, decoder, multigpu=False):
         self.multigpu = multigpu
         super(NMTModel, self).__init__()
         self.encoder = encoder
         self.decoder = decoder
-        self.tagger = tagger
 
     def forward(self, src, tgt, lengths, dec_state=None):
         """Forward propagate a `src` and `tgt` pair for training.
@@ -587,13 +585,9 @@ class NMTModel(nn.Module):
         tgt = tgt[:-1]  # exclude last target from inputs
 
         enc_final, memory_bank = self.encoder(src, lengths)
-
-        # Use memory_bank to compute tags
-        tags = self.tagger(memory_bank)
-
         enc_state = \
             self.decoder.init_decoder_state(src, memory_bank, enc_final)
-        decoder_outputs, dec_state, attns, align = \
+        decoder_outputs, dec_state, attns = \
             self.decoder(tgt, memory_bank,
                          enc_state if dec_state is None
                          else dec_state,
@@ -602,7 +596,7 @@ class NMTModel(nn.Module):
             # Not yet supported on multi-gpu
             dec_state = None
             attns = None
-        return decoder_outputs, attns, dec_state, tags, align
+        return decoder_outputs, attns, dec_state
 
 
 class DecoderState(object):

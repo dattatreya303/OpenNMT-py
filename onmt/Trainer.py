@@ -175,8 +175,7 @@ class Trainer(object):
             if accum == self.grad_accum_count:
                 self._gradient_accumulation(
                         true_batchs, total_stats,
-                        report_stats, normalization,
-                        epoch)
+                        report_stats, normalization)
 
                 if report_func is not None:
                     report_stats = report_func(
@@ -223,11 +222,11 @@ class Trainer(object):
             tgt = onmt.io.make_features(batch, 'tgt')
 
             # F-prop through the model.
-            outputs, attns, _, tags, align = self.model(src, tgt, src_lengths)
+            outputs, attns, _ = self.model(src, tgt, src_lengths)
 
             # Compute loss.
             batch_stats = self.valid_loss.monolithic_compute_loss(
-                    batch, outputs, attns, tags, align)
+                    batch, outputs, attns)
 
             # Update statistics.
             stats.update(batch_stats)
@@ -274,8 +273,7 @@ class Trainer(object):
                       valid_stats.ppl(), epoch))
 
     def _gradient_accumulation(self, true_batchs, total_stats,
-                               report_stats, normalization,
-                               epoch):
+                               report_stats, normalization):
         if self.grad_accum_count > 1:
             self.model.zero_grad()
 
@@ -304,18 +302,14 @@ class Trainer(object):
                 # 2. F-prop all but generator.
                 if self.grad_accum_count == 1:
                     self.model.zero_grad()
-                outputs, attns, dec_state, tags, align = \
+                outputs, attns, dec_state = \
                     self.model(src, tgt, src_lengths, dec_state)
-
-                # Let model train before activating tag loss
-                # if epoch < 2:
-                #     tags = None
 
                 # 3. Compute loss in shards for memory efficiency.
                 batch_stats = self.train_loss.sharded_compute_loss(
                         batch, outputs, attns, j,
-                        trunc_size, self.shard_size,
-                        normalization, tags, align)
+                        trunc_size, self.shard_size, normalization)
+
                 # 4. Update the parameters and statistics.
                 if self.grad_accum_count == 1:
                     self.optim.step()

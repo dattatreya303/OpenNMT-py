@@ -77,8 +77,7 @@ def main():
                                  window_size=opt.window_size,
                                  window_stride=opt.window_stride,
                                  window=opt.window,
-                                 use_filter_pred=False,
-                                 tag_path=None)
+                                 use_filter_pred=False)
 
     # Sort batch by decreasing lengths of sentence required by pytorch.
     # sort=False means "Use dataset's sortkey instead of iterator's".
