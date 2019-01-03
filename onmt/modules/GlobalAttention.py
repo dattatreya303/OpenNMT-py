@@ -76,7 +76,7 @@ class GlobalAttention(nn.Module):
         out_bias = self.attn_type == "mlp"
         self.linear_out = nn.Linear(dim*2, dim, bias=out_bias)
 
-        self.sm = nn.Softmax()
+        self.sm = nn.Softmax(dim=-1)
         self.tanh = nn.Tanh()
 
         if coverage:
@@ -211,4 +211,4 @@ class GlobalAttention(nn.Module):
             aeq(batch, batch_)
             aeq(sourceL, sourceL_)
 
-        return attn_h, align_vectors
+        return attn_h, align_vectors, align.view(batch*targetL, sourceL)

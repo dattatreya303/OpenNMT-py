@@ -4,9 +4,12 @@ import torch
 import torch.cuda
 from torch.autograd import Variable
 
+from torch.nn.modules.loss import BCELoss, BCEWithLogitsLoss
+from torch.autograd import Variable
+
 import onmt
 import onmt.io
-from onmt.Utils import aeq
+from onmt.Utils import aeq, sequence_mask
 
 
 class CopyGenerator(nn.Module):
@@ -90,26 +93,12 @@ class CopyGenerator(nn.Module):
         logits = self.linear(hidden)
         logits[:, self.tgt_dict.stoi[onmt.io.PAD_WORD]] = -float('inf')
         prob = F.softmax(logits)
-
         # Probability of copying p(z=1) batch.
         p_copy = F.sigmoid(self.linear_copy(hidden))
         # Probibility of not copying: p_{word}(w) * (1 - p(z))
         out_prob = torch.mul(prob,  1 - p_copy.expand_as(prob))
-        tags = Variable(torch.cuda.FloatTensor(tags))
-        mul_attn = torch.mul(attn, tags) * 2
-        
-        # Renormalize here? 
-        # mul_sum = mul_attn.sum(1)
-        # mul_attn = torch.div(mul_attn, mul_sum.unsqueeze(1).expand_as(mul_attn))
-        # Add in the copy probability
-        mul_attn = torch.mul(mul_attn, p_copy.expand_as(attn))
 
-        # Mask out the non copied words
-        # print("mulsize", mul_attn.size())
-
-        # print(tags.size())
-        tags = tags.expand_as(attn)
-        # Avg the probs
+        mul_attn = torch.mul(attn, p_copy.expand_as(attn))
         copy_prob = torch.bmm(mul_attn.view(-1, batch, slen)
                               .transpose(0, 1),
                               src_map.transpose(0, 1)).transpose(0, 1)
@@ -153,6 +142,20 @@ class CopyGeneratorCriterion(object):
         return loss
 
 
+class CopyTagCriterion(object):
+    def __init__(self, pad, eps=1e-10):
+        self.eps = eps
+        self.pad = pad
+
+    def __call__(self, yhat, y, src_lengths):
+        # Probability of the correct class
+        out = yhat.gather(1, y.view(-1, 1))
+        # Mask out padding
+        mask = sequence_mask(src_lengths).view(-1).unsqueeze(1)
+        out.data.masked_fill_(1 - mask, 0)
+        return -out, mask
+
+
 class CopyGeneratorLossCompute(onmt.Loss.LossComputeBase):
     """
     Copy Generator Loss Computation.
@@ -170,8 +173,9 @@ class CopyGeneratorLossCompute(onmt.Loss.LossComputeBase):
         self.normalize_by_length = normalize_by_length
         self.criterion = CopyGeneratorCriterion(len(tgt_vocab), force_copy,
                                                 self.padding_idx)
+        self.tag_criterion = CopyTagCriterion(self.padding_idx)
 
-    def _make_shard_state(self, batch, output, range_, attns):
+    def _make_shard_state(self, batch, output, tags, range_, attns, tag_labels, align):
         """ See base class for args description. """
         if getattr(batch, "alignment", None) is None:
             raise AssertionError("using -copy_attn you need to pass in "
@@ -181,10 +185,13 @@ class CopyGeneratorLossCompute(onmt.Loss.LossComputeBase):
             "output": output,
             "target": batch.tgt[range_[0] + 1: range_[1]],
             "copy_attn": attns.get("copy"),
-            "align": batch.alignment[range_[0] + 1: range_[1]]
+            "align": batch.alignment[range_[0] + 1: range_[1]],
+            "tags": tags,
+            "tag_labels": tag_labels,
+            "copy_align": align
         }
 
-    def _compute_loss(self, batch, output, target, copy_attn, align):
+    def _compute_loss(self, batch, output, target, copy_attn, align, tag_labels, tags, copy_align):
         """
         Compute the loss. The args must match self._make_shard_state().
         Args:
@@ -194,10 +201,41 @@ class CopyGeneratorLossCompute(onmt.Loss.LossComputeBase):
             copy_attn: the copy attention value.
             align: the align info.
         """
+
+        # Make a mask that is the same across decoding steps
+
+        # Copy alignment is tgt x batch x src
+        src_len = copy_attn.shape[2]
+        tag_labels = tag_labels[:src_len]
+        # ftags = tag_labels.view(-1, copy_attn.shape[-1])\
+        #                        .unsqueeze(0)\
+        #                        .expand_as(copy_attn)\
+                               # .contiguous()
+        # log_mask = torch.log(ftags)
+
+        ftags = tags[:,:,1].contiguous()\
+                           .view(-1, copy_attn.shape[-1])\
+                           .unsqueeze(0)\
+                           .expand_as(copy_attn)\
+                           .contiguous()
+        log_mask = ftags
+
+        #print("ftags", ftags.shape)
+        # ftags.detach_()
+        # Log both non-logged
+        log_copy = copy_align# torch.log(copy_attn)
+        # Add the mask (- inf for 0, 0 for 1)
+        log_masked = log_mask + log_copy
+        # Compute a new softmax with the mask
+        new_copy = F.softmax(log_masked, dim=-1)
         target = target.view(-1)
         align = align.view(-1)
+
+
+
+        # tags = tags.squeeze(2)
         scores = self.generator(self._bottle(output),
-                                self._bottle(copy_attn),
+                                self._bottle(new_copy),
                                 batch.src_map)
         loss = self.criterion(scores, align, target)
         scores_data = scores.data.clone()
@@ -230,4 +268,19 @@ class CopyGeneratorLossCompute(onmt.Loss.LossComputeBase):
         else:
             loss = loss.sum()
 
+        # Compute Tag Loss Term
+        tags = tags.view(-1, 2)
+        tag_labels = tag_labels.view(-1).long()
+        tagging_loss, mask = self.tag_criterion(tags, tag_labels, batch.src[1])
+        if self.normalize_by_length:
+            tagging_loss = tagging_loss.view(-1, batch.batch_size).sum(0)
+            tagging_loss = torch.div(tagging_loss, Variable(batch.src[1].float())).sum()
+        else:
+            tagging_loss = tagging_loss.sum()
+
+        print("Tagging Loss {:.3f} Loss: {:.3f}".format(tagging_loss.data[0], loss.data[0]))
+        for s,t in zip(tag_labels[:10], tags[:10]):
+            print("{} {:.2f}".format(s.data[0],t.exp().data[1]))
+
+        loss = tagging_loss + loss
         return loss, stats

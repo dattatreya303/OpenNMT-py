@@ -23,7 +23,7 @@ class Beam(object):
                  stepwise_penalty=False,
                  block_ngram_repeat=0,
                  exclusion_tokens=set(),
-                 dot_token=None):
+                 dot=0):
 
         self.size = size
         self.tt = torch.cuda if cuda else torch
@@ -42,6 +42,7 @@ class Beam(object):
 
         # Has EOS topped the beam yet.
         self._eos = eos
+        self._dot = dot
         self.eos_top = False
 
         # Token that ends sentences
@@ -123,6 +124,7 @@ class Beam(object):
                         ngrams.add(tuple(gram))
                     if fail:
                         beam_scores[j] = -10e20
+
             #sentence blocker
             le = len(self.next_ys)
             for j in range(self.next_ys[-1].size(0)):
