@@ -230,10 +230,9 @@ class CopyGeneratorLossCompute(loss.LossComputeBase):
             "copy_attn": attns.get("copy"),
             "align": batch.alignment[range_[0] + 1: range_[1]],
             "tags": tags,
-            "tag_labels": batch.tag#[range_[0] + 1: range_[1]]
         }
 
-    def _compute_loss(self, batch, output, target, copy_attn, align, tags, tag_labels):
+    def _compute_loss(self, batch, output, target, copy_attn, align, tags):
         """
         Compute the loss. The args must match self._make_shard_state().
         Args:
@@ -246,23 +245,9 @@ class CopyGeneratorLossCompute(loss.LossComputeBase):
 
         # Copy alignment is tgt x batch x src
         src_len = copy_attn.shape[2]
-        # Make sure that the tag labels have correct length
-        tag_labels = tag_labels[:src_len]
 
         # Use supervision on the mask prediction
-        self.supervise_tags = False
         tagging_loss = 0
-        if self.supervise_tags:
-            # Compute Tag Loss Term
-            tagging_loss = self.tag_criterion(
-                tags.view(-1, 2)[:150],
-                tag_labels.view(-1).long()[:150],
-                batch.src[1])
-            # if self.normalize_by_length:
-            #     tagging_loss = tagging_loss.view(-1, batch.batch_size).sum(0)
-            #     tagging_loss = torch.div(tagging_loss, batch.src[1].float()).sum()
-            # else:
-            #     tagging_loss = tagging_loss.sum()
 
         target = target.view(-1)
         align = align.view(-1)
