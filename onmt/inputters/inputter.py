@@ -184,23 +184,13 @@ def collect_feature_vocabs(fields, side):
     return feature_vocabs
 
 
-def build_dataset(fields, data_type,
-                  src_data_iter=None,
-                  src_path=None,
-                  src_dir=None,
-                  tgt_data_iter=None,
-                  tgt_path=None,
-                  src_seq_length=0,
-                  tgt_seq_length=0,
-                  src_seq_length_trunc=0,
-                  tgt_seq_length_trunc=0,
-                  dynamic_dict=True,
-                  sample_rate=0,
-                  window_size=0,
-                  window_stride=0,
-                  window=None,
-                  normalize_audio=True,
-                  use_filter_pred=True,
+def build_dataset(fields, data_type, src_data_iter=None, src_path=None,
+                  src_dir=None, tgt_data_iter=None, tgt_path=None,
+                  src_seq_length=0, tgt_seq_length=0,
+                  src_seq_length_trunc=0, tgt_seq_length_trunc=0,
+                  dynamic_dict=True, sample_rate=0,
+                  window_size=0, window_stride=0, window=None,
+                  normalize_audio=True, use_filter_pred=True,
                   image_channel_size=3):
     """
     Build src/tgt examples iterator from corpus files, also extract
@@ -254,11 +244,8 @@ def build_dataset(fields, data_type,
         TextDataset.make_text_examples_nfeats_tpl(
             tgt_data_iter, tgt_path, tgt_seq_length_trunc, "tgt")
 
-
     if data_type == 'text':
-        dataset = TextDataset(fields,
-                              src_examples_iter,
-                              tgt_examples_iter,
+        dataset = TextDataset(fields, src_examples_iter, tgt_examples_iter,
                               num_src_feats, num_tgt_feats,
                               src_seq_length=src_seq_length,
                               tgt_seq_length=tgt_seq_length,

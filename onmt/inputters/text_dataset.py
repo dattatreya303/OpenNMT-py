@@ -81,7 +81,6 @@ class TextDataset(DatasetBase):
                 ex_values, out_fields)
             src_size += len(example.src)
             out_examples.append(example)
-        print("average src size: {:.1f}, total {}".format(src_size / len(out_examples),len(out_examples)))
 
         def filter_pred(example):
             """ ? """

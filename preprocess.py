@@ -47,11 +47,8 @@ def parse_args():
     return opt
 
 
-def build_save_in_shards_using_shards_size(src_corpus,
-                                           tgt_corpus,
-                                           fields,
-                                           corpus_type,
-                                           opt):
+def build_save_in_shards_using_shards_size(src_corpus, tgt_corpus, fields,
+                                           corpus_type, opt):
     """
     Divide src_corpus and tgt_corpus into smaller multiples
     src_copus and tgt corpus files, then build shards, each
@@ -63,11 +60,13 @@ def build_save_in_shards_using_shards_size(src_corpus,
 
     with codecs.open(src_corpus, "r", encoding="utf-8") as fsrc:
         with codecs.open(tgt_corpus, "r", encoding="utf-8") as ftgt:
-
             logger.info("Reading source and target files: %s %s."
                         % (src_corpus, tgt_corpus))
             src_data = fsrc.readlines()
             tgt_data = ftgt.readlines()
+            if len(src_data) != len(tgt_data):
+                raise AssertionError("Source and Target should \
+                                     have the same length")
 
             num_shards = int(len(src_data) / opt.shard_size)
             for x in range(num_shards):
@@ -82,7 +81,6 @@ def build_save_in_shards_using_shards_size(src_corpus,
                 f.writelines(
                         tgt_data[x * opt.shard_size: (x + 1) * opt.shard_size])
                 f.close()
-
             num_written = num_shards * opt.shard_size
             if len(src_data) > num_written:
                 logger.info("Splitting shard %d." % num_shards)
@@ -152,7 +150,6 @@ def build_save_dataset(corpus_type, fields, opt):
     else:
         src_corpus = opt.valid_src
         tgt_corpus = opt.valid_tgt
-
 
     if (opt.shard_size > 0):
         return build_save_in_shards_using_shards_size(src_corpus,
