@@ -62,15 +62,29 @@ class CopyGenerator(nn.Module):
 
     """
 
-    def __init__(self, input_size, tgt_dict, normalizing_temp, gumbel_tags):
+    def __init__(self,
+                 input_size,
+                 tgt_dict,
+                 gumbel_tags=False,
+                 start_annealing_steps=1000,
+                 start_normalizing_temp=1.0,
+                 min_normalizing_temp=0.2,
+                 annealing_factor=1e-3):
         super(CopyGenerator, self).__init__()
         self.linear = nn.Linear(input_size, len(tgt_dict))
         self.linear_copy = nn.Linear(input_size, 1)
         self.tgt_dict = tgt_dict
         self.softmax = nn.Softmax(dim=1)
         self.sigmoid = nn.Sigmoid()
-        self.normalizing_temp = normalizing_temp
+
+        # Content Selector options
+        self.normalizing_temp = start_normalizing_temp
+        self.start_annealing_steps = start_annealing_steps
+        self.min_normalizing_temp = min_normalizing_temp
         self.gumbel_tags = gumbel_tags
+        self.annealing_factor = annealing_factor
+
+        # Initialize a counter for annealing the temperature
         self.annealing_steps = 0
 
     def forward(self, hidden, attn, tags, src_map):
@@ -106,6 +120,7 @@ class CopyGenerator(nn.Module):
 
         # GUMBEL SOFTMAX PREDICTED MASK
         tag_out_pre = self._gumbel_sample(tags)
+        print(tag_out_pre.shape, tags.shape, out_prob.shape, hidden.shape)
         # formatting
         tag_out = tag_out_pre.transpose(0, 1)\
                              .unsqueeze(0)\
@@ -114,7 +129,7 @@ class CopyGenerator(nn.Module):
         # MASK THE ATTENTION
         mul_attn = torch.mul(tag_out, attn)
         # RENORMALIZE AND ADD TEMPERATURE
-        mul_attn = F.softmax(mul_attn/0.7, -1)
+        mul_attn = F.softmax(mul_attn/1., -1)
 
         mul_attn = torch.mul(mul_attn, p_copy.expand_as(attn))
         copy_prob = torch.bmm(mul_attn.view(-1, batch, slen)
@@ -130,17 +145,18 @@ class CopyGenerator(nn.Module):
         # Sample noise
         U = torch.rand(flat_tags.shape)
         eps = 1e-20
-        U = -torch.log(-torch.log(U + eps) + eps)
-        U.to(tags.device)
+        U = -torch.log(-torch.log(U + eps) + eps).to(tags.device)
         # Apply temperature
         x = (flat_tags + U) / self.normalizing_temp
         x = F.softmax(x, dim=-1)
-        self._anneal_temperature()
+        if self.normalizing_temp > self.min_normalizing_temp * 1.01:
+            self._anneal_temperature()
         return x.view_as(tags)[:,:,1]
 
     def _anneal_temperature(self):
         self.annealing_steps += 1
         if self.annealing_steps % 5 == 0:
+            # TODO: do interpolation in between start and end
             self.normalizing_temp = max(0.4, np.exp(-1e-3*self.annealing_steps))
             print("annealing temperature to {:2f}".format(self.normalizing_temp))
 

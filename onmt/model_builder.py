@@ -238,8 +238,11 @@ def build_base_model(model_opt, fields, gpu, checkpoint=None):
     else:
         generator = CopyGenerator(model_opt.dec_rnn_size,
                                   fields["tgt"].vocab,
-                                  normalizing_temp=model_opt.content_temperature,
-                                  gumbel_tags=model_opt.content_gumble_tags)
+                                  start_normalizing_temp=model_opt.start_normalizing_temp,
+                                  gumbel_tags=model_opt.content_gumbel_tags,
+                                  start_annealing_steps=model_opt.start_annealing_steps,
+                                  min_normalizing_temp=model_opt.min_normalizing_temp,
+                                  annealing_factor=model_opt.annealing_factor)
 
     # Load the model states from checkpoint or initialize them.
     if checkpoint is not None:

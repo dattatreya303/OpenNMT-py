@@ -12,10 +12,17 @@ def model_opts(parser):
     """
     # Content Selector Options
     group = parser.add_argument_group('Content-Selector')
-    group.add_argument('-content_gumble_tags', action='store_true',
+    group.add_argument('-content_gumbel_tags', action='store_true',
                        help="""Use gumble softmax for content selection.""")
-    group.add_argument('-content_temperature', type=float, default=1.,
+    group.add_argument('-start_annealing_steps', type=int, default=1000,
+                       help='Number of pretraining before gumbel starts.')
+    group.add_argument('-start_normalizing_temp', type=float, default=1.,
                        help='Temperature for content selection.')
+    group.add_argument('-min_normalizing_temp', type=float, default=0.3,
+                       help='Minimum gumbel temperature.')
+    group.add_argument('-annealing_factor', type=float, default=0.003,
+                       help='Annealing of temperature per step.')
+
     # Embedding Options
     group = parser.add_argument_group('Model-Embeddings')
     group.add_argument('-src_word_vec_size', type=int, default=500,
