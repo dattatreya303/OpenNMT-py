@@ -122,10 +122,15 @@ class CopyGenerator(nn.Module):
         tag_out_pre = self._gumbel_sample(tags)
         print(tag_out_pre.shape, tags.shape, out_prob.shape, hidden.shape)
         # formatting
-        tag_out = tag_out_pre.transpose(0, 1)\
-                             .unsqueeze(0)\
-                             .expand(batch_by_tlen, batch, slen)\
-                             .view(-1, slen)
+        # tag_out_pre is slen x batch_size x 2
+        # attn is batch*tlen x slen
+        # Therefore we switch dimensions and expand first dimension
+        tag_out = tag_out_pre.transpose(0, 1)
+        tag_out = tag_out.unsqueeze(0)
+        tlen = int(batch_by_tlen/batch)
+        tag_out = tag_out.expand(tlen, batch, slen)
+        tag_out = tag_out.contiguous().view(-1, slen)
+
         # MASK THE ATTENTION
         mul_attn = torch.mul(tag_out, attn)
         # RENORMALIZE AND ADD TEMPERATURE
@@ -307,15 +312,10 @@ class CopyGeneratorLossCompute(loss.LossComputeBase):
         else:
             loss = loss.sum()
 
-        if self.supervise_tags:
-            print("Tagging Loss {:.3f} Loss: {:.3f}".format(
-                tagging_loss.data.item(), loss.data.item()))
-            loss = 1e-1*loss + tagging_loss
-        else:
-            print("No Activated Tagging Loss, Loss: {:.3f}, Penalty: {:.3f}".format(
-                loss.data.item(), tagging_penalty.item()))
-            for tag in gumbel_tags.view(-1, 2)[:15, 1]:
-                print("{:.3f}".format(tag.item()))
+        print("Loss: {:.3f}, Penalty: {:.3f}".format(
+            loss.data.item(), tagging_penalty.item()))
+        #for tag in gumbel_tags.view(-1, 2)[:15, 1]:
+        #    print("{:.3f}".format(tag.item()))
 
-            loss = loss + tagging_penalty * 0.003
+        loss = loss + tagging_penalty * 0.0003
         return loss, stats
