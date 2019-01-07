@@ -78,14 +78,25 @@ class CopyGenerator(nn.Module):
         self.sigmoid = nn.Sigmoid()
 
         # Content Selector options
-        self.normalizing_temp = start_normalizing_temp
-        self.start_annealing_steps = start_annealing_steps
-        self.min_normalizing_temp = min_normalizing_temp
         self.gumbel_tags = gumbel_tags
+        self.normalizing_temp = start_normalizing_temp
+        self.start_normalizing_temp = start_normalizing_temp
+        self.min_normalizing_temp = min_normalizing_temp
+        self.start_annealing_steps = start_annealing_steps
         self.annealing_factor = annealing_factor
 
         # Initialize a counter for annealing the temperature
         self.annealing_steps = 0
+
+        # Log all the things
+        if self.gumbel_tags:
+            print("###########################################")
+            print("USING GUMBEL SAMPLING FOR COPY ATTENTION")
+            print("ACTIVATE AFTER {} STEPS".format(self.start_annealing_steps))
+            print("START TEMP:", self.start_normalizing_temp)
+            print("ANNEALING FACTOR:", self.annealing_factor)
+            print("MIN TEMP:", self.min_normalizing_temp)
+            print("###########################################")
 
     def forward(self, hidden, attn, tags, src_map):
         """
@@ -112,34 +123,43 @@ class CopyGenerator(nn.Module):
         logits = self.linear(hidden)
         logits[:, self.tgt_dict.stoi[inputters.PAD_WORD]] = -float('inf')
         prob = self.softmax(logits)
-
         # Probability of copying p(z=1) batch.
         p_copy = self.sigmoid(self.linear_copy(hidden))
         # Probibility of not copying: p_{word}(w) * (1 - p(z))
-        out_prob = torch.mul(prob, 1 - p_copy.expand_as(prob))
+        out_prob = torch.mul(prob, 1 - p_copy)
+
 
         # GUMBEL SOFTMAX PREDICTED MASK
-        tag_out_pre = self._gumbel_sample(tags)
-        print(tag_out_pre.shape, tags.shape, out_prob.shape, hidden.shape)
-        # formatting
-        # tag_out_pre is slen x batch_size x 2
-        # attn is batch*tlen x slen
-        # Therefore we switch dimensions and expand first dimension
-        tag_out = tag_out_pre.transpose(0, 1)
-        tag_out = tag_out.unsqueeze(0)
-        tlen = int(batch_by_tlen/batch)
-        tag_out = tag_out.expand(tlen, batch, slen)
-        tag_out = tag_out.contiguous().view(-1, slen)
+        # Todo: try masking attention in general, not only here
+        if self.gumbel_tags and (self.annealing_steps >= self.start_annealing_steps):
+            # tag_out_pre is slen x batch_size x 2
+            # attn is batch*tlen x slen
+            # Therefore we switch dimensions and expand first dimension
+            tag_out_pre = self._gumbel_sample(tags)
+            # Target length
+            tlen = int(batch_by_tlen/batch)
+            tag_out = tag_out_pre.transpose(0, 1)\
+                                 .unsqueeze(0)\
+                                 .expand(tlen, batch, slen)\
+                                 .contiguous()\
+                                 .view(-1, slen)
+            # finally mask the attention
+            mul_attn = torch.mul(tag_out, attn)
+            # renormalize (todo: with temperature)
+            mul_attn = F.softmax(mul_attn/1., -1)
+        else:
+            # set variables for non-gumbel version
+            tag_out_pre = tags
+            mul_attn = attn
 
-        # MASK THE ATTENTION
-        mul_attn = torch.mul(tag_out, attn)
-        # RENORMALIZE AND ADD TEMPERATURE
-        mul_attn = F.softmax(mul_attn/1., -1)
+        self.annealing_steps += 1
 
-        mul_attn = torch.mul(mul_attn, p_copy.expand_as(attn))
-        copy_prob = torch.bmm(mul_attn.view(-1, batch, slen)
-                              .transpose(0, 1),
-                              src_map.transpose(0, 1)).transpose(0, 1)
+        # Normal p_copy from here
+        mul_attn = torch.mul(mul_attn, p_copy)
+        copy_prob = torch.bmm(
+            mul_attn.view(-1, batch, slen).transpose(0, 1),
+            src_map.transpose(0, 1)
+        ).transpose(0, 1)
         copy_prob = copy_prob.contiguous().view(-1, cvocab)
         return torch.cat([out_prob, copy_prob], 1), tag_out_pre
 
@@ -159,10 +179,9 @@ class CopyGenerator(nn.Module):
         return x.view_as(tags)[:,:,1]
 
     def _anneal_temperature(self):
-        self.annealing_steps += 1
         if self.annealing_steps % 5 == 0:
-            # TODO: do interpolation in between start and end
-            self.normalizing_temp = max(0.4, np.exp(-1e-3*self.annealing_steps))
+            self.normalizing_temp = max(self.min_normalizing_temp,
+                                        self.start_normalizing_temp * np.exp(-1e-3*self.annealing_steps))
             print("annealing temperature to {:2f}".format(self.normalizing_temp))
 
 
@@ -278,9 +297,6 @@ class CopyGeneratorLossCompute(loss.LossComputeBase):
             tags,
             batch.src_map)
 
-        # penalize selection
-        tagging_penalty = gumbel_tags.view(-1, 2)[:, 1].sum()
-
         loss = self.criterion(scores, align, target)
         scores_data = scores.data.clone()
         scores_data = inputters.TextDataset.collapse_copy_scores(
@@ -312,10 +328,23 @@ class CopyGeneratorLossCompute(loss.LossComputeBase):
         else:
             loss = loss.sum()
 
-        print("Loss: {:.3f}, Penalty: {:.3f}".format(
-            loss.data.item(), tagging_penalty.item()))
-        #for tag in gumbel_tags.view(-1, 2)[:15, 1]:
-        #    print("{:.3f}".format(tag.item()))
+        # penalize selection
 
-        loss = loss + tagging_penalty * 0.0003
+        tagging_penalty = gumbel_tags.view(-1, 2)[:, 1].sum()
+        if self.generator.annealing_steps > self.generator.start_annealing_steps:
+
+            loss = loss + tagging_penalty * 0.0003
+
+            print("Loss: {:.3f}, Penalty: {:.3f}".format(
+                loss.data.item(), tagging_penalty.item()))
+        else:
+            loss = loss + tagging_penalty * 0.
+
+        for tag in gumbel_tags.view(-1, 2)[:15, 1]:
+           print("{:.3f}".format(tag.item()), end=" ")
+        print()
+
+
+
+
         return loss, stats
