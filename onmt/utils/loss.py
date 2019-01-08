@@ -103,8 +103,8 @@ class LossComputeBase(nn.Module):
             :obj:`onmt.utils.Statistics`: loss statistics
         """
         range_ = (0, batch.tgt.size(0))
-        shard_state = self._make_shard_state(batch, output, range_, attns)
-        _, batch_stats = self._compute_loss(batch, tags, **shard_state)
+        shard_state = self._make_shard_state(batch, output, tags, range_, attns)
+        _, batch_stats = self._compute_loss(batch, **shard_state)
 
         return batch_stats
 
@@ -140,9 +140,9 @@ class LossComputeBase(nn.Module):
         """
         batch_stats = onmt.utils.Statistics()
         range_ = (cur_trunc, cur_trunc + trunc_size)
-        shard_state = self._make_shard_state(batch, output, range_, attns)
+        shard_state = self._make_shard_state(batch, output, tags, range_, attns)
         for shard in shards(shard_state, shard_size):
-            loss, stats = self._compute_loss(batch, tags, **shard)
+            loss, stats = self._compute_loss(batch, **shard)
             loss.div(float(normalization)).backward()
             batch_stats.update(stats)
         return batch_stats
