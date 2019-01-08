@@ -88,7 +88,7 @@ class LossComputeBase(nn.Module):
         """
         return NotImplementedError
 
-    def monolithic_compute_loss(self, batch, output, attns, tags):
+    def monolithic_compute_loss(self, batch, output, attns, tags=None):
         """
         Compute the forward loss for the batch.
 
@@ -103,14 +103,14 @@ class LossComputeBase(nn.Module):
             :obj:`onmt.utils.Statistics`: loss statistics
         """
         range_ = (0, batch.tgt.size(0))
-        shard_state = self._make_shard_state(batch, output, tags, range_, attns)
-        _, batch_stats = self._compute_loss(batch, **shard_state)
+        shard_state = self._make_shard_state(batch, output, range_, attns)
+        _, batch_stats = self._compute_loss(batch, tags, **shard_state)
 
         return batch_stats
 
     def sharded_compute_loss(self, batch, output, attns,
                              cur_trunc, trunc_size, shard_size,
-                             normalization, tags):
+                             normalization, tags=None):
         """Compute the forward loss and backpropagate.  Computation is done
         with shards and optionally truncation for memory efficiency.
 
@@ -140,9 +140,9 @@ class LossComputeBase(nn.Module):
         """
         batch_stats = onmt.utils.Statistics()
         range_ = (cur_trunc, cur_trunc + trunc_size)
-        shard_state = self._make_shard_state(batch, output, tags, range_, attns)
+        shard_state = self._make_shard_state(batch, output, range_, attns)
         for shard in shards(shard_state, shard_size):
-            loss, stats = self._compute_loss(batch, **shard)
+            loss, stats = self._compute_loss(batch, tags, **shard)
             loss.div(float(normalization)).backward()
             batch_stats.update(stats)
         return batch_stats
