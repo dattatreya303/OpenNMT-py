@@ -147,7 +147,7 @@ class LossComputeBase(nn.Module):
             batch_stats.update(stats)
         return batch_stats
 
-    def _stats(self, loss, scores, target):
+    def _stats(self, loss, scores, target, extra_stats=None):
         """
         Args:
             loss (:obj:`FloatTensor`): the loss computed by the loss criterion.
@@ -164,7 +164,11 @@ class LossComputeBase(nn.Module):
                           .sum() \
                           .item()
         num_non_padding = non_padding.sum().item()
-        return onmt.utils.Statistics(loss.item(), num_non_padding, num_correct)
+        return onmt.utils.Statistics(
+            loss.item(),
+            num_non_padding,
+            num_correct,
+            extra_stats)
 
     def _bottle(self, _v):
         return _v.view(-1, _v.size(2))
