@@ -161,7 +161,10 @@ class CopyGenerator(nn.Module):
             src_map.transpose(0, 1)
         ).transpose(0, 1)
         copy_prob = copy_prob.contiguous().view(-1, cvocab)
-        return torch.cat([out_prob, copy_prob], 1), tag_out_pre
+
+        extra_stats = {'gumbel_temp': self.normalizing_temp,
+                       'avg_copy_prob': p_copy.data.clone()}
+        return torch.cat([out_prob, copy_prob], 1), tag_out_pre, extra_stats
 
     def _gumbel_sample(self, tags):
         src_len, bsize, tsize = tags.shape
@@ -291,7 +294,7 @@ class CopyGeneratorLossCompute(loss.LossComputeBase):
 
         target = target.view(-1)
         align = align.view(-1)
-        scores, gumbel_tags = self.generator(
+        scores, gumbel_tags, extra_stats = self.generator(
             self._bottle(output),
             self._bottle(copy_attn),
             tags,
@@ -314,7 +317,6 @@ class CopyGeneratorLossCompute(loss.LossComputeBase):
 
         # Compute sum of perplexities for stats
         loss_data = loss.sum().data.clone()
-        stats = self._stats(loss_data, scores_data, target_data)
 
         if self.normalize_by_length:
             # Compute Loss as NLL divided by seq length
@@ -331,6 +333,10 @@ class CopyGeneratorLossCompute(loss.LossComputeBase):
         # penalize selection
 
         tagging_penalty = gumbel_tags.view(-1, 2)[:, 1].sum()
+        extra_stats['tagging_penalty'] = tagging_penalty.item() / copy_attn.shape[1]
+        stats = self._stats(loss_data, scores_data, target_data, extra_stats)
+
+
         if self.generator.annealing_steps > self.generator.start_annealing_steps:
 
             loss = loss + tagging_penalty * 0.0001

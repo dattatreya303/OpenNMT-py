@@ -19,12 +19,16 @@ class Statistics(object):
     * elapsed time
     """
 
-    def __init__(self, loss=0, n_words=0, n_correct=0):
+    def __init__(self, loss=0, n_words=0, n_correct=0, extra_stats=None):
         self.loss = loss
         self.n_words = n_words
         self.n_correct = n_correct
         self.n_src_words = 0
         self.start_time = time.time()
+        self.extra_stats = extra_stats
+        # if extra_stats is not None:
+        #     for k, v in extra_stats.items():
+        #         setattr(self, k, v)
 
     @staticmethod
     def all_gather_stats(stat, max_size=4096):
@@ -67,7 +71,7 @@ class Statistics(object):
                 our_stats[i].update(stat, update_n_src_words=True)
         return our_stats
 
-    def update(self, stat, update_n_src_words=False):
+    def update(self, stat, update_n_src_words=False, extra_stats=None):
         """
         Update statistics by suming values with another `Statistics` object
 
@@ -83,6 +87,13 @@ class Statistics(object):
 
         if update_n_src_words:
             self.n_src_words += stat.n_src_words
+
+        if extra_stats is not None:
+            if self.extra_stats is None:
+                self.extra_stats = extra_stats
+            else:
+                for k, v in extra_stats.items():
+                    self.extra_stats[k] = self.extra_stats[k] + v
 
     def accuracy(self):
         """ compute accuracy """
@@ -130,3 +141,6 @@ class Statistics(object):
         writer.add_scalar(prefix + "/accuracy", self.accuracy(), step)
         writer.add_scalar(prefix + "/tgtper", self.n_words / t, step)
         writer.add_scalar(prefix + "/lr", learning_rate, step)
+        if self.extra_stats is not None:
+            for k, v in self.extra_stats.items():
+                writer.add_scalar(prefix + "/" + str(k), v, step)
