@@ -4,7 +4,8 @@ import time
 import math
 import sys
 
-from collections import Counter
+from collections import defaultdict
+import numpy as np
 from torch.distributed import get_rank
 from onmt.utils.distributed import all_gather_list
 from onmt.utils.logging import logger
@@ -30,7 +31,7 @@ class Statistics(object):
         if extra_stats is not None:
             self.extra_stats = extra_stats
         else:
-            self.extra_stats = Counter()
+            self.extra_stats = defaultdict(list)
 
     @staticmethod
     def all_gather_stats(stat, max_size=4096):
@@ -95,10 +96,7 @@ class Statistics(object):
                 self.extra_stats = stat.extra_stats
             else:
                 for k, v in stat.extra_stats.items():
-                    if self.extra_stats[k] > 0:
-                        self.extra_stats[k] = np.mean(self.extra_stats[k], v)
-                    else:
-                        self.extra_stats[k] = v
+                    self.extra_stats[k] += v
 
     def accuracy(self):
         """ compute accuracy """
@@ -139,7 +137,7 @@ class Statistics(object):
         if self.extra_stats is not None:
             extra_log = ""
             for k,v in self.extra_stats.items():
-                extra_log += "{} {};".format(k, v)
+                extra_log += "{} {};".format(k, np.mean(v))
             logger.info(extra_log)
         sys.stdout.flush()
 
@@ -153,4 +151,4 @@ class Statistics(object):
         writer.add_scalar(prefix + "/lr", learning_rate, step)
         if self.extra_stats is not None:
             for k, v in self.extra_stats.items():
-                writer.add_scalar(prefix + "/" + str(k), v, step)
+                writer.add_scalar(prefix + "/" + str(k), np.mean(v), step)

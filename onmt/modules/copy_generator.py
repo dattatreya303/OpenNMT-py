@@ -162,8 +162,8 @@ class CopyGenerator(nn.Module):
         ).transpose(0, 1)
         copy_prob = copy_prob.contiguous().view(-1, cvocab)
 
-        extra_stats = {'gumbel_temp': self.normalizing_temp,
-                       'avg_copy_prob': p_copy.data.clone().mean()}
+        extra_stats = {'gumbel_temp': [self.normalizing_temp],
+                       'avg_copy_prob': [p_copy.data.clone().mean()]}
         return torch.cat([out_prob, copy_prob], 1), tag_out_pre, extra_stats
 
     def _gumbel_sample(self, tags):
@@ -333,7 +333,7 @@ class CopyGeneratorLossCompute(loss.LossComputeBase):
         # penalize selection
 
         tagging_penalty = gumbel_tags.view(-1, 2)[:, 1].sum()
-        extra_stats['tagging_penalty'] = tagging_penalty.item() / copy_attn.shape[1]
+        extra_stats['tagging_penalty'] = [tagging_penalty.item() / copy_attn.shape[1]]
         stats = self._stats(loss_data, scores_data, target_data, extra_stats)
 
 
