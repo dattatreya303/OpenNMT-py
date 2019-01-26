@@ -26,9 +26,9 @@ class Statistics(object):
         self.n_src_words = 0
         self.start_time = time.time()
         self.extra_stats = extra_stats
-        # if extra_stats is not None:
-        #     for k, v in extra_stats.items():
-        #         setattr(self, k, v)
+        if extra_stats is not None:
+            for k, v in extra_stats.items():
+                setattr(self, k, v)
 
     @staticmethod
     def all_gather_stats(stat, max_size=4096):
@@ -131,6 +131,11 @@ class Statistics(object):
                self.n_src_words / (t + 1e-5),
                self.n_words / (t + 1e-5),
                time.time() - start))
+        if self.extra_stats is not None:
+            extra_log = ""
+            for k,v in self.extra_stats.items():
+                extra_log += "{} {};".format(k, v)
+            logger.info(extra_log)
         sys.stdout.flush()
 
     def log_tensorboard(self, prefix, writer, learning_rate, step):

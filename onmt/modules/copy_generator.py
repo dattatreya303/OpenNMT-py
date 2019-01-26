@@ -341,11 +341,11 @@ class CopyGeneratorLossCompute(loss.LossComputeBase):
 
             loss = loss + tagging_penalty * 0.0001
 
-            print("Loss: {:.3f}, Penalty: {:.3f}".format(
-	    loss.data.item(), tagging_penalty.item()))
-            for tag in gumbel_tags.view(-1, 2)[:15, 1]:
-                print("{:.3f}".format(tag.item()), end=" ")
-            print()
+     #        print("Loss: {:.3f}, Penalty: {:.3f}".format(
+	    # loss.data.item(), tagging_penalty.item()))
+            # for tag in gumbel_tags.view(-1, 2)[:15, 1]:
+            #     print("{:.3f}".format(tag.item()), end=" ")
+            # print()
         else:
             loss = loss + tagging_penalty * 0.
 
