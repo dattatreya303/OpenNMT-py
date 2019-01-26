@@ -95,7 +95,10 @@ class Statistics(object):
                 self.extra_stats = stat.extra_stats
             else:
                 for k, v in stat.extra_stats.items():
-                    self.extra_stats[k] += v
+                    if self.extra_stats[k] > 0:
+                        self.extra_stats[k] = np.mean(self.extra_stats[k], v)
+                    else:
+                        self.extra_stats[k] = v
 
     def accuracy(self):
         """ compute accuracy """
