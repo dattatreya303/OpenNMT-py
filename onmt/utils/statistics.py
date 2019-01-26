@@ -137,7 +137,7 @@ class Statistics(object):
         if self.extra_stats is not None:
             extra_log = ""
             for k,v in self.extra_stats.items():
-                extra_log += "{} {};".format(k, np.mean(v))
+                extra_log += "{} {:.2f}; ".format(k, np.mean(v))
             logger.info(extra_log)
         sys.stdout.flush()
 
