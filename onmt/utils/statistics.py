@@ -4,6 +4,7 @@ import time
 import math
 import sys
 
+from collections import Counter
 from torch.distributed import get_rank
 from onmt.utils.distributed import all_gather_list
 from onmt.utils.logging import logger
@@ -28,6 +29,8 @@ class Statistics(object):
         self.extra_stats = extra_stats
         if extra_stats is not None:
             self.extra_stats = extra_stats
+        else:
+            self.extra_stats = Counter()
 
     @staticmethod
     def all_gather_stats(stat, max_size=4096):
@@ -70,7 +73,7 @@ class Statistics(object):
                 our_stats[i].update(stat, update_n_src_words=True)
         return our_stats
 
-    def update(self, stat, update_n_src_words=False, extra_stats=None):
+    def update(self, stat, update_n_src_words=False):
         """
         Update statistics by suming values with another `Statistics` object
 
@@ -87,11 +90,11 @@ class Statistics(object):
         if update_n_src_words:
             self.n_src_words += stat.n_src_words
 
-        if extra_stats is not None:
+        if stat.extra_stats is not None:
             if self.extra_stats is None:
-                self.extra_stats = extra_stats
+                self.extra_stats = stat.extra_stats
             else:
-                for k, v in extra_stats.items():
+                for k, v in stat.extra_stats.items():
                     self.extra_stats[k] += v
 
     def accuracy(self):
