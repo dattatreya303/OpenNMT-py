@@ -1,4 +1,6 @@
 """ Optimizers class """
+from collections import defaultdict
+
 import torch
 import torch.optim as optim
 from torch.nn.utils import clip_grad_norm_
@@ -208,6 +210,14 @@ class Optimizer(object):
         else:
             for op in self.optimizer.optimizers:
                 op.param_groups[0]['lr'] = self.learning_rate
+
+    def reset_to_start(self):
+        '''
+        Resets the optimizer to the state before training started
+        '''
+        self._set_rate(self.original_lr)
+        self.optimizer.state = defaultdict(dict)
+
 
     def step(self):
         """Update the model parameters based on current gradients.

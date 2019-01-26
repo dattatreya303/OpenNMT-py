@@ -48,13 +48,15 @@ def build_trainer(opt, device_id, model, fields,
         gpu_rank = 0
         n_gpu = 0
     gpu_verbose_level = opt.gpu_verbose_level
+    start_annealing_steps = opt.start_annealing_steps
 
     report_manager = onmt.utils.build_report_manager(opt)
     trainer = onmt.Trainer(model, train_loss, valid_loss, optim, trunc_size,
                            shard_size, data_type, norm_method,
                            grad_accum_count, n_gpu, gpu_rank,
                            gpu_verbose_level, report_manager,
-                           model_saver=model_saver)
+                           model_saver=model_saver,
+                           start_annealing_steps=start_annealing_steps)
     return trainer
 
 
@@ -86,7 +88,8 @@ class Trainer(object):
     def __init__(self, model, train_loss, valid_loss, optim,
                  trunc_size=0, shard_size=32, data_type='text',
                  norm_method="sents", grad_accum_count=1, n_gpu=1, gpu_rank=1,
-                 gpu_verbose_level=0, report_manager=None, model_saver=None):
+                 gpu_verbose_level=0, report_manager=None, model_saver=None,
+                 start_annealing_steps=-1):
         # Basic attributes.
         self.model = model
         self.train_loss = train_loss
@@ -102,6 +105,7 @@ class Trainer(object):
         self.gpu_verbose_level = gpu_verbose_level
         self.report_manager = report_manager
         self.model_saver = model_saver
+        self.start_annealing_steps = start_annealing_steps
 
         assert grad_accum_count > 0
         if grad_accum_count > 1:
@@ -143,6 +147,9 @@ class Trainer(object):
         self._start_report_manager(start_time=total_stats.start_time)
 
         while step <= train_steps:
+            # TODO: finish!!!
+            if step == self.start_annealing_steps:
+                self.optim.reset_to_start()
 
             reduce_counter = 0
             for i, batch in enumerate(train_iter):
