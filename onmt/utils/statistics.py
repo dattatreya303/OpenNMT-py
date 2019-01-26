@@ -27,8 +27,7 @@ class Statistics(object):
         self.start_time = time.time()
         self.extra_stats = extra_stats
         if extra_stats is not None:
-            for k, v in extra_stats.items():
-                setattr(self, k, v)
+            self.extra_stats = extra_stats
 
     @staticmethod
     def all_gather_stats(stat, max_size=4096):
@@ -93,7 +92,7 @@ class Statistics(object):
                 self.extra_stats = extra_stats
             else:
                 for k, v in extra_stats.items():
-                    self.extra_stats[k] = self.extra_stats[k] + v
+                    self.extra_stats[k] += v
 
     def accuracy(self):
         """ compute accuracy """
