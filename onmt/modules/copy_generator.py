@@ -184,7 +184,8 @@ class CopyGenerator(nn.Module):
     def _anneal_temperature(self):
         if self.annealing_steps % 5 == 0:
             self.normalizing_temp = max(self.min_normalizing_temp,
-                                        self.start_normalizing_temp * np.exp(-1e-3*(self.annealing_steps-self.start_annealing_steps)))
+                                        self.start_normalizing_temp * np.exp(
+                -self.annealing_factor * (self.annealing_steps - self.start_annealing_steps)))
             print("annealing temperature to {:2f}".format(self.normalizing_temp))
 
 
@@ -342,7 +343,7 @@ class CopyGeneratorLossCompute(loss.LossComputeBase):
             loss = loss + tagging_penalty * 0.0001
 
      #        print("Loss: {:.3f}, Penalty: {:.3f}".format(
-	    # loss.data.item(), tagging_penalty.item()))
+        # loss.data.item(), tagging_penalty.item()))
             # for tag in gumbel_tags.view(-1, 2)[:15, 1]:
             #     print("{:.3f}".format(tag.item()), end=" ")
             # print()

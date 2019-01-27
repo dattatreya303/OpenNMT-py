@@ -4,6 +4,7 @@ import time
 from datetime import datetime
 
 import onmt
+import os
 
 from onmt.utils.logging import logger
 
@@ -11,9 +12,10 @@ from onmt.utils.logging import logger
 def build_report_manager(opt):
     if opt.tensorboard:
         from tensorboardX import SummaryWriter
-        writer = SummaryWriter(opt.tensorboard_log_dir
-                               + datetime.now().strftime("/%b-%d_%H-%M-%S"),
-                               comment="Unmt")
+        run_name = opt.save_model.split("/")[-1]
+        dt = datetime.now().strftime("/%b-%d_%H-%M-%S")
+        writer_name = os.path.join(opt.tensorboard_log_dir, run_name + "_" + dt)
+        writer = SummaryWriter(writer_name, comment="Unmt")
     else:
         writer = None
 
