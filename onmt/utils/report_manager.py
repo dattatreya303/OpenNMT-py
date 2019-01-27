@@ -13,7 +13,7 @@ def build_report_manager(opt):
     if opt.tensorboard:
         from tensorboardX import SummaryWriter
         run_name = opt.save_model.split("/")[-1]
-        dt = datetime.now().strftime("/%b-%d_%H-%M-%S")
+        dt = datetime.now().strftime("%b-%d_%H-%M-%S")
         writer_name = os.path.join(opt.tensorboard_log_dir, run_name + "_" + dt)
         writer = SummaryWriter(writer_name, comment="Unmt")
     else:
