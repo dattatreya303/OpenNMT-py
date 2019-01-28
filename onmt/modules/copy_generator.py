@@ -135,7 +135,9 @@ class CopyGenerator(nn.Module):
             # tag_out_pre is slen x batch_size x 2
             # attn is batch*tlen x slen
             # Therefore we switch dimensions and expand first dimension
+            print(tags.shape)
             tag_out_pre = self._gumbel_sample(tags)
+            print(tag_out_pre.shape)
             # Target length
             tlen = int(batch_by_tlen/batch)
             tag_out = tag_out_pre.transpose(0, 1)\
@@ -178,8 +180,10 @@ class CopyGenerator(nn.Module):
         # Apply temperature
         x = (flat_tags + U) / self.normalizing_temp
         x = F.softmax(x, dim=-1)
+        # Anneal only if minimum temp has not been reached
         if self.normalizing_temp > self.min_normalizing_temp * 1.01:
             self._anneal_temperature()
+        # Only return positive probabilities
         return x.view_as(tags)[:,:,1]
 
     def _anneal_temperature(self):
