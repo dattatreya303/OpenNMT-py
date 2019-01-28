@@ -154,7 +154,7 @@ class Trainer(object):
             for i, batch in enumerate(train_iter):
                 if step == self.start_annealing_steps:
                     logger.info('Resetting optimizer now!')
-                    self.optim = build_optim(self.model, opt, None)
+                    self.optim = build_optim(self.model, self.opt, None)
 
                 if self.n_gpu == 0 or (i % self.n_gpu == self.gpu_rank):
                     if self.gpu_verbose_level > 1:

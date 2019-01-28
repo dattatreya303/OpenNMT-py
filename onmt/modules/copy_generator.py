@@ -135,9 +135,7 @@ class CopyGenerator(nn.Module):
             # tag_out_pre is slen x batch_size x 2
             # attn is batch*tlen x slen
             # Therefore we switch dimensions and expand first dimension
-            print(tags.shape)
             tag_out_pre = self._gumbel_sample(tags)
-            print(tag_out_pre.shape)
             # Target length
             tlen = int(batch_by_tlen/batch)
             tag_out = tag_out_pre.transpose(0, 1)\
@@ -151,7 +149,7 @@ class CopyGenerator(nn.Module):
             mul_attn = F.softmax(mul_attn/1., -1)
         else:
             # set variables for non-gumbel version
-            tag_out_pre = tags
+            tag_out_pre = tags[:,:,1]
             mul_attn = attn
 
         self.annealing_steps += 1
