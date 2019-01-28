@@ -336,7 +336,7 @@ class CopyGeneratorLossCompute(loss.LossComputeBase):
 
         # penalize selection
 
-        tagging_penalty = gumbel_tags.view(-1, 2)[:, 1].sum()
+        tagging_penalty = gumbel_tags.sum()
         extra_stats['tagging_penalty'] = [tagging_penalty.item() / copy_attn.shape[1]]
         stats = self._stats(loss_data, scores_data, target_data, extra_stats)
 
