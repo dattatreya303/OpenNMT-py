@@ -163,8 +163,8 @@ class CopyGenerator(nn.Module):
         copy_prob = copy_prob.contiguous().view(-1, cvocab)
 
         extra_stats = {'gumbel_temp': [self.normalizing_temp],
-                       'avg_copy_prob': [p_copy.data.clone().mean()],
-                       'avg_content_selection': [tag_out_pre.data.clone().mean()]}
+                       'avg_copy_prob': [p_copy.mean()],
+                       'avg_content_selection': [tag_out_pre.mean()]}
         return torch.cat([out_prob, copy_prob], 1), tag_out_pre, extra_stats
 
     def _gumbel_sample(self, tags):

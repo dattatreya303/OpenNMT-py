@@ -147,12 +147,12 @@ class Trainer(object):
         self._start_report_manager(start_time=total_stats.start_time)
 
         while step <= train_steps:
-            # TODO: finish!!!
-            if step == self.start_annealing_steps:
-                self.optim.reset_to_start()
-
             reduce_counter = 0
             for i, batch in enumerate(train_iter):
+                if step == self.start_annealing_steps:
+                    logger.info('Resetting optimizer now!')
+                    self.optim.reset_to_start()
+
                 if self.n_gpu == 0 or (i % self.n_gpu == self.gpu_rank):
                     if self.gpu_verbose_level > 1:
                         logger.info("GpuRank %d: index: %d accum: %d"
