@@ -123,6 +123,9 @@ def main(opt, device_id):
 
     # Build optimizer.
     optim = build_optim(model, opt, checkpoint)
+    # Set correct annealing steps
+    if optim._step > 0 and opt.copy_attn:
+        model.generator.annealing_steps = optim._step
 
     # Build model saver
     model_saver = build_model_saver(model_opt, opt, model, fields, optim)
