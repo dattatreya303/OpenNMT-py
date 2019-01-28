@@ -125,6 +125,7 @@ def main(opt, device_id):
     optim = build_optim(model, opt, checkpoint)
     # Set correct annealing steps
     if optim._step > 0 and opt.copy_attn:
+        logger.info("Setting annealing steps in copy generator")
         model.generator.annealing_steps = optim._step
 
     # Build model saver
