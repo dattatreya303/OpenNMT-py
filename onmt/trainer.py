@@ -15,7 +15,7 @@ import onmt.inputters as inputters
 import onmt.utils
 
 from onmt.utils.logging import logger
-
+from onmt.utils.optimizers import build_optim
 
 def build_trainer(opt, device_id, model, fields,
                   optim, data_type, model_saver=None):
@@ -56,7 +56,8 @@ def build_trainer(opt, device_id, model, fields,
                            grad_accum_count, n_gpu, gpu_rank,
                            gpu_verbose_level, report_manager,
                            model_saver=model_saver,
-                           start_annealing_steps=start_annealing_steps)
+                           start_annealing_steps=start_annealing_steps,
+                           opt=opt)
     return trainer
 
 
@@ -89,7 +90,7 @@ class Trainer(object):
                  trunc_size=0, shard_size=32, data_type='text',
                  norm_method="sents", grad_accum_count=1, n_gpu=1, gpu_rank=1,
                  gpu_verbose_level=0, report_manager=None, model_saver=None,
-                 start_annealing_steps=-1):
+                 start_annealing_steps=-1, opt=None):
         # Basic attributes.
         self.model = model
         self.train_loss = train_loss
@@ -106,6 +107,8 @@ class Trainer(object):
         self.report_manager = report_manager
         self.model_saver = model_saver
         self.start_annealing_steps = start_annealing_steps
+        # For reinitializing optim
+        self.opt = opt
 
         assert grad_accum_count > 0
         if grad_accum_count > 1:
@@ -151,7 +154,7 @@ class Trainer(object):
             for i, batch in enumerate(train_iter):
                 if step == self.start_annealing_steps:
                     logger.info('Resetting optimizer now!')
-                    self.optim.reset_to_start()
+                    self.optim = build_optim(self.model, opt, None)
 
                 if self.n_gpu == 0 or (i % self.n_gpu == self.gpu_rank):
                     if self.gpu_verbose_level > 1:
