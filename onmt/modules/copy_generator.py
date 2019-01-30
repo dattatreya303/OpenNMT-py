@@ -340,7 +340,6 @@ class CopyGeneratorLossCompute(loss.LossComputeBase):
         extra_stats['tagging_penalty'] = [tagging_penalty.item() / copy_attn.shape[1]]
         stats = self._stats(loss_data, scores_data, target_data, extra_stats)
 
-
         if self.generator.annealing_steps > self.generator.start_annealing_steps:
 
             loss = loss + tagging_penalty * 0.0001
