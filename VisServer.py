@@ -324,8 +324,9 @@ class ONMTmodelAPI():
             dynamic_dict=self.model_opt.copy_attn)
 
         # Iterating over the single batch... torchtext requirement
+        cur_device = "cuda" if self.opt.cuda else "cpu"
         test_data = onmt.inputters.OrderedIterator(
-            dataset=data, device=self.opt.gpu,
+            dataset=data, device=torch.device(cur_device),
             batch_size=self.opt.batch_size, train=False, sort=False,
             sort_within_batch=True,
             shuffle=False)
@@ -336,7 +337,8 @@ class ONMTmodelAPI():
             self.opt.n_best, self.opt.replace_unk, self.opt.tgt)
 
         # Convert partial decode into valid input to decoder
-        print("partial:", partial_decode)
+        if partial_decode:
+            print("partial:", partial_decode)
         vocab = self.fields["tgt"].vocab
         partial = []
         for p in partial_decode:
@@ -383,18 +385,37 @@ def main():
         '''
         Debug function
         '''
+        print("Predictions:")
         for k in reply[0]['decoder']:
             for tok in k:
                 print(tok['token'], end=" ")
-            print("\n")
+            print("")
 
     # model = ONMTmodelAPI("../Seq2Seq-Vis/0316-fakedates/date_acc_100.00_ppl_1.00_e7.pt")
     # model = ONMTmodelAPI("models/ende_acc_46.86_ppl_21.19_e12.pt")
+
+    # Summarization Inference options
+    inference_options = {'k': 5,
+                         'min_length': 35,
+                         'stepwise_penalty': True,
+                         'coverage_penalty': 'summary',
+                         'beta': 10,
+                         'length_penalty': 'wu',
+                         'alpha': 1.0,
+                         'block_ngram_repeat': 3,
+                         'ignore_when_blocking': ["."],
+                         'replace_unk': True,
+                         }
+
     # Simple Case
-    reply = model.translate(["this is a test ubiquotus ."], dump_data=False)
+    reply = model.translate(["this is a test ubiquotus ."],
+                            dump_data=False,
+                            inference_options=inference_options)
     print_only_pred_text(reply)
     # Selection Mask
-    reply = model.translate(["this is a test ubiquotus ."], selection_mask=[[1, 1, 1, 1, 0, 1]])
+    reply = model.translate(["this is a test ubiquotus ."],
+                            selection_mask=[[1, 1, 1, 1, 0, 1]],
+                            inference_options=inference_options)
 
     # Case with attn overwrite OR partial
     # reply = model.translate(["this is madness ."], attn_overwrite=[{2:0}])

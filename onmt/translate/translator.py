@@ -176,7 +176,7 @@ class Translator(object):
 
         data_iter = inputters.OrderedIterator(
             dataset=data,
-            device=cur_device,
+            device=torch.device(cur_device),
             batch_size=batch_size,
             train=False,
             sort=False,
