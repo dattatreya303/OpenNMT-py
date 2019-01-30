@@ -308,7 +308,8 @@ class Translator(object):
                 return self._translate_batch(batch, data,
                                              return_states=return_states,
                                              partial=partial,
-                                             attn_overwrite=attn_overwrite)
+                                             attn_overwrite=attn_overwrite,
+                                             selection_mask=selection_mask)
 
     def _run_encoder(self, batch, data_type):
         src = inputters.make_features(batch, 'src', data_type)
@@ -337,7 +338,8 @@ class Translator(object):
         memory_lengths,
         src_map=None,
         step=None,
-        batch_offset=None
+        batch_offset=None,
+        selection_mask=None
     ):
 
         unk_idx = self.fields["tgt"].vocab.stoi[self.fields["tgt"].unk_token]
@@ -365,7 +367,7 @@ class Translator(object):
             attn = dec_attn["copy"]
             scores, p_copy = self.model.generator(dec_out.view(-1, dec_out.size(2)),
                                           attn.view(-1, attn.size(2)),
-                                          src_map)
+                                          src_map, selection_mask)
             # here we have scores [tgt_lenxbatch, vocab] or [beamxbatch, vocab]
             if batch_offset is None:
                 scores = scores.view(batch.batch_size, -1, scores.size(-1))
@@ -597,7 +599,8 @@ class Translator(object):
     def _translate_batch(self, batch, data,
                          return_states=False,
                          partial=[],
-                         attn_overwrite=[]):
+                         attn_overwrite=[],
+                         selection_mask=None):
         # (0) Prep each of the components of the search.
         # And helper method for reducing verbosity.
         beam_size = self.beam_size
@@ -687,7 +690,7 @@ class Translator(object):
             # (b) Decode and forward
             out, beam_attn, contexts, p_copy = self._decode_and_generate(
                 inp, memory_bank, batch, data, memory_lengths=memory_lengths,
-                src_map=src_map, step=i
+                src_map=src_map, step=i, selection_mask=selection_mask
             )
             out = out.view(batch_size, beam_size, -1)
             beam_attn = beam_attn.view(batch_size, beam_size, -1)

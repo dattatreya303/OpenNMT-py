@@ -197,7 +197,7 @@ class ONMTmodelAPI():
             context = batch_data['context'][:, transIx, :]
             for token, state in zip(in_text[transIx].split(), context):
                 encoderRes.append({'token': token,
-                                   'state': state.data.tolist()
+                                   'state': [0] # state.data.tolist()
                                    })
             res['encoder'] = encoderRes
 
@@ -215,8 +215,8 @@ class ONMTmodelAPI():
                                                      batch_data['target_context'][transIx][ix])):
                     currentDec = {}
                     currentDec['token'] = token
-                    currentDec['state'] = state.data.tolist()
-                    currentDec['context'] = cstar.data.tolist()
+                    currentDec['state'] = [0]   # state.data.tolist()
+                    currentDec['context'] = [0] # cstar.data.tolist()
                     # Extra tgt annotations
                     for key, value in batch_data['target_extra'][transIx][ix].items():
                         currentDec[key] = float(value[tokIx+1].item())
@@ -294,6 +294,7 @@ class ONMTmodelAPI():
         attn_overwrite: dictionary of which index in decoder has what attention on the encoder
         k: int, number of top translations to return
         attn: list, not implemented yet
+        selection_mask: list of list of 0/1 for each input
         """
 
         # Set batch size to number of requested translations
@@ -347,7 +348,13 @@ class ONMTmodelAPI():
         # Retrieve batch to translate
         # We only have one batch, but indexing does not work
         for b in test_data:
-          batch = b
+            batch = b
+
+        ## Format the selection mask
+        if selection_mask is not None:
+            # Check correct length
+            selection_mask = torch.FloatTensor(selection_mask)
+            assert(batch.src[0].shape == selection_mask.transpose(0,1).shape)
 
         # Run the translation
         batch_data = self.translator.translate_batch(
@@ -355,7 +362,7 @@ class ONMTmodelAPI():
             return_states=True,
             partial=partial,
             attn_overwrite=attn_overwrite,
-            selection_mask=None)
+            selection_mask=selection_mask)
         translations = builder.from_batch(batch_data)
 
         # Format to specified format
@@ -370,11 +377,25 @@ class ONMTmodelAPI():
 
 
 def main():
-    model = ONMTmodelAPI("models/ada6_bridge_oldcopy_tagged_acc_54.17_ppl_11.17_e20.pt")
+    model = ONMTmodelAPI("model/ada6_bridge_oldcopy_tagged_acc_54.17_ppl_11.17_e20.pt")
+
+    def print_only_pred_text(rep):
+        '''
+        Debug function
+        '''
+        for k in reply[0]['decoder']:
+            for tok in k:
+                print(tok['token'], end=" ")
+            print("\n")
+
     # model = ONMTmodelAPI("../Seq2Seq-Vis/0316-fakedates/date_acc_100.00_ppl_1.00_e7.pt")
     # model = ONMTmodelAPI("models/ende_acc_46.86_ppl_21.19_e12.pt")
     # Simple Case
     reply = model.translate(["this is a test ubiquotus ."], dump_data=False)
+    print_only_pred_text(reply)
+    # Selection Mask
+    reply = model.translate(["this is a test ubiquotus ."], selection_mask=[[1, 1, 1, 1, 0, 1]])
+
     # Case with attn overwrite OR partial
     # reply = model.translate(["this is madness ."], attn_overwrite=[{2:0}])
     # reply = model.translate(["this is madness ."], partial_decode=["das ist"])
@@ -397,11 +418,10 @@ def main():
     #                         attn_overwrite=[{2:0}, {2:2}])
 
     # Debug options
-    # print("______")
-    # print(len(reply[0]['decoder']))
-    # print(len(reply[0]['decoder'][0]))
-    # print(reply[0]['beam_trace'])
-    print(json.dumps(reply, indent=2, sort_keys=True))
+
+
+    print_only_pred_text(reply)
+    # print(json.dumps(reply, indent=2, sort_keys=True))
 
 if __name__ == "__main__":
     main()
