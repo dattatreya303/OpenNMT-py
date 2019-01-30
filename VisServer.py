@@ -334,7 +334,7 @@ class ONMTmodelAPI():
         # Builder used to convert translation to text
         builder = onmt.translate.TranslationBuilder(
             data, self.translator.fields,
-            self.opt.n_best, self.opt.replace_unk, self.opt.tgt)
+            self.translator.n_best, self.opt.replace_unk, self.opt.tgt)
 
         # Convert partial decode into valid input to decoder
         if partial_decode:
@@ -395,7 +395,8 @@ def main():
     # model = ONMTmodelAPI("models/ende_acc_46.86_ppl_21.19_e12.pt")
 
     # Summarization Inference options
-    inference_options = {'k': 5,
+    inference_options = {'k': 1,
+                         'beam_size': 10,
                          'min_length': 35,
                          'stepwise_penalty': True,
                          'coverage_penalty': 'summary',
