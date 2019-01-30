@@ -88,18 +88,18 @@ class ONMTmodelAPI():
     def format_payload(self, translation_list, batch_data, in_text):
         """
         Structure of Payload
-        
-        OLD: 
+
+        OLD:
 
         {1: {
             # top_k
             scores: [top1_score, top2_score, ...]
             # src
-            encoder: [{'token': str, 
-                       'state': [float, float, ...]}, 
-                      {}, 
+            encoder: [{'token': str,
+                       'state': [float, float, ...]},
+                      {},
                       ...
-                      ], 
+                      ],
             # top_k x tgt_len
             decoder: [[{'token': str,
                        'state': [float, float, ...],
@@ -109,7 +109,7 @@ class ONMTmodelAPI():
                       ],
                       [],
                       ...
-                     ] 
+                     ]
             # top_k x max_tgt x src
             attn: [[[float, float, float],
                     [],
@@ -131,23 +131,23 @@ class ONMTmodelAPI():
                          [[hyp, hyp], [hyp, hyp], ...],
                          ...
                         ]
-            }, 
+            },
          2: { ...}
          }
 
 
-        NEW: 
+        NEW:
 
         {1: {
             # top_k
             scores: [top1_score, top2_score, ...]
             # src
-            encoder: [{'token': str, 
+            encoder: [{'token': str,
                        'state': [float, float, ...],
-                       'XXX': XXX}, 
-                      {}, 
+                       'XXX': XXX},
+                      {},
                       ...
-                      ], 
+                      ],
             # top_k x tgt_len
             decoder: [[{'token': str,
                        'state': [float, float, ...],
@@ -158,7 +158,7 @@ class ONMTmodelAPI():
                       ],
                       [],
                       ...
-                     ] 
+                     ]
             # top_k x max_tgt x src
             alignment: {'attn': [[[float, float, float],
                                     [],
@@ -182,7 +182,7 @@ class ONMTmodelAPI():
                          [[hyp, hyp], [hyp, hyp], ...],
                          ...
                         ]
-            }, 
+            },
          2: { ...}
          }
         """
@@ -281,7 +281,13 @@ class ONMTmodelAPI():
 
 
 
-    def translate(self, in_text, partial_decode=[], attn_overwrite=[], inference_options={'k':5}, dump_data=False):
+    def translate(self,
+                  in_text,
+                  partial_decode=[],
+                  attn_overwrite=[],
+                  inference_options={'k':5},
+                  dump_data=False,
+                  selection_mask=None):
         """
         in_text: list of strings
         partial_decode: list of strings, not implemented yet
@@ -304,9 +310,9 @@ class ONMTmodelAPI():
 
         # Use written file as input to dataset builder
         data = onmt.inputters.build_dataset(
-            self.fields, 
+            self.fields,
             self.opt.data_type,
-            "tmp.txt", 
+            "tmp.txt",
             tgt=self.opt.tgt,
             src_dir=self.opt.src_dir,
             sample_rate=self.opt.sample_rate,
@@ -347,14 +353,15 @@ class ONMTmodelAPI():
         batch_data = self.translator.translate_batch(
             batch, data, False,
             return_states=True,
-            partial=partial, 
-            attn_overwrite=attn_overwrite)
+            partial=partial,
+            attn_overwrite=attn_overwrite,
+            selection_mask=None)
         translations = builder.from_batch(batch_data)
 
         # Format to specified format
         payload = self.format_payload(
-            translation_list=translations, 
-            batch_data=batch_data, 
+            translation_list=translations,
+            batch_data=batch_data,
             in_text=in_text)
 
         # For debugging, uncomment this

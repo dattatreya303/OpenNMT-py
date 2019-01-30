@@ -278,9 +278,10 @@ class Translator(object):
                       codecs.open(self.dump_beam, 'w', 'utf-8'))
         return all_scores, all_predictions
 
-    def translate_batch(self, batch, data, attn_debug, 
-                        fast=False, return_states=False, 
-                        partial=[], attn_overwrite=[]):
+    def translate_batch(self, batch, data, attn_debug,
+                        fast=False, return_states=False,
+                        partial=[], attn_overwrite=[],
+                        selection_mask=None):
         """
         Translate a batch of sentences.
 
@@ -304,9 +305,9 @@ class Translator(object):
                     n_best=self.n_best,
                     return_attention=attn_debug or self.replace_unk)
             else:
-                return self._translate_batch(batch, data, 
-                                             return_states=return_states, 
-                                             partial=partial, 
+                return self._translate_batch(batch, data,
+                                             return_states=return_states,
+                                             partial=partial,
                                              attn_overwrite=attn_overwrite)
 
     def _run_encoder(self, batch, data_type):
@@ -593,9 +594,9 @@ class Translator(object):
 
         return results
 
-    def _translate_batch(self, batch, data,  
-                         return_states=False, 
-                         partial=[], 
+    def _translate_batch(self, batch, data,
+                         return_states=False,
+                         partial=[],
                          attn_overwrite=[]):
         # (0) Prep each of the components of the search.
         # And helper method for reducing verbosity.
@@ -749,7 +750,7 @@ class Translator(object):
                             in enumerate(cur_tops)]
                 all_current.append(last)
             trace[j] = all_current
-            
+
         ret["gold_score"] = [0] * batch_size
         if "tgt" in batch.__dict__:
             ret["gold_score"] = self._run_target(batch, data)
@@ -777,8 +778,8 @@ class Translator(object):
             target_extra = [[] for predIx in range(batch.batch_size)]
             for b in resorted:
                 tstates, context, attn, decoder_extra = self._run_pred(
-                    src, memory_bank, 
-                    enc_states, batch, 
+                    src, memory_bank,
+                    enc_states, batch,
                     b, pad, bos,
                     src_map=batch.src_map.data)
                 tstates = tstates.squeeze()
@@ -838,7 +839,7 @@ class Translator(object):
         # print(ret)
         return ret
 
-    def _run_pred(self, src, memory_bank, enc_states, 
+    def _run_pred(self, src, memory_bank, enc_states,
                   batch, pred, tgt_pad, tgt_bos,
                   src_map=None):
         tt = torch.cuda if self.cuda else torch
@@ -879,11 +880,11 @@ class Translator(object):
 
         return dec_out_ret, weighted_context_ret, attn['std'], decoder_extra
 
-    def _get_top_k(self, 
-                   src, 
-                   context, 
-                   enc_states, 
-                   batch, 
+    def _get_top_k(self,
+                   src,
+                   context,
+                   enc_states,
+                   batch,
                    pred,
                    tgt_pad,
                    tgt_bos,
@@ -923,7 +924,7 @@ class Translator(object):
         if not self.copy_attn:
             for ix, dec in enumerate(dec_out):
                 out = self.model.generator.forward(dec)
-                
+
                 # each o is a different prediction
                 alt = []
                 alt_s = []
