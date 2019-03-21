@@ -1008,7 +1008,7 @@ class Translator(object):
                    or t.data[0] == tgt_eos \
                    or t.data[0] == self.fields["tgt"].vocab.stoi["."]:
                     continue
-                current_state = [list(s[:,ix,:].squeeze().numpy().tolist()) for s in stat]
+                current_state = [list(s[:,ix,:].squeeze().cpu().numpy().tolist()) for s in stat]
 
 
                 for pr, sc, st in zip(list(pred[ix].numpy()), list(sco[ix].numpy()), current_state):
