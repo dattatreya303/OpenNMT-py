@@ -95,7 +95,7 @@ class CopyGenerator(nn.Module):
         else:
             mul_attn = attn
 
-        mul_attn = torch.mul(attn, p_copy)
+        mul_attn = torch.mul(mul_attn, p_copy)
         copy_prob = torch.bmm(
             mul_attn.view(-1, batch, slen).transpose(0, 1),
             src_map.transpose(0, 1)
