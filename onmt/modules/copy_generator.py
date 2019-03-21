@@ -90,6 +90,7 @@ class CopyGenerator(nn.Module):
 
         # Mod: selection mask - 2 can be tuned
         if selection_mask is not None:
+            selection_mask = selection_mask.to(attn.device)
             mul_attn = torch.mul(attn, selection_mask) * 2
         else:
             mul_attn = attn
