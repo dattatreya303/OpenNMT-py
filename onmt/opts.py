@@ -544,6 +544,8 @@ def translate_opts(parser):
     group.add('--stepwise_penalty', '-stepwise_penalty', action='store_true',
               help="""Apply penalty at every decoding step.
                        Helpful for summary penalty.""")
+    group.add('--max_sentences', '-max_sentences', type=int, default=5,
+              help='Max number of predicted sentences')
     group.add('--length_penalty', '-length_penalty', default='none',
               choices=['none', 'wu', 'avg'],
               help="""Length Penalty to use.""")

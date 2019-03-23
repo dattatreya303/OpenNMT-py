@@ -23,7 +23,9 @@ class Beam(object):
                  min_length=0,
                  stepwise_penalty=False,
                  block_ngram_repeat=0,
-                 exclusion_tokens=set()):
+                 max_sentences=6,
+                 exclusion_tokens=set(),
+                 end_of_sentence=0):
 
         self.size = size
         self.tt = torch.cuda if cuda else torch
@@ -57,6 +59,10 @@ class Beam(object):
 
         # Minimum prediction length
         self.min_length = min_length
+
+        # Max prediction length
+        self._dot = end_of_sentence
+        self.max_sentences = max_sentences
 
         # Apply Penalty at every step
         self.stepwise_penalty = stepwise_penalty
@@ -93,6 +99,16 @@ class Beam(object):
                 word_probs[k][self._eos] = -1e20
         # Sum the previous scores.
         if len(self.prev_ks) > 0:
+            # sentence blocker
+            le = len(self.next_ys)
+            for j in range(self.next_ys[-1].size(0)):
+                if self.next_ys[-1][j] == self._dot:
+                    hyp, _ = self.get_hyp(le-1, j)
+                    num_sents = sum([1 for t in hyp if t == self._dot])
+                    if num_sents >= self.max_sentences:
+                        word_probs[j][:] = -1e20
+                        word_probs[j][self._eos] = 0
+
             beam_scores = word_probs + self.scores.unsqueeze(1)
             # Don't let EOS have children.
             for i in range(self.next_ys[-1].size(0)):
@@ -139,6 +155,8 @@ class Beam(object):
 
         for i in range(self.next_ys[-1].size(0)):
             if self.next_ys[-1][i] == self._eos:
+                hyp, _ = self.get_hyp(len(self.next_ys)-1, i)
+                num_sents = sum([1 for t in hyp if t==self._dot])
                 global_scores = self.global_scorer.score(self, self.scores)
                 s = global_scores[i]
                 self.finished.append((s, len(self.next_ys) - 1, i))

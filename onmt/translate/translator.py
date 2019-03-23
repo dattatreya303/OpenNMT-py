@@ -88,6 +88,7 @@ class Translator(object):
         self.beam_size = opt.beam_size
         self.min_length = opt.min_length
         self.stepwise_penalty = opt.stepwise_penalty
+        self.max_sentences = opt.max_sentences
         self.dump_beam = opt.dump_beam
         self.block_ngram_repeat = opt.block_ngram_repeat
         self.ignore_when_blocking = set(opt.ignore_when_blocking)
@@ -614,6 +615,8 @@ class Translator(object):
         pad = vocab.stoi[self.fields['tgt'].pad_token]
         eos = vocab.stoi[self.fields['tgt'].eos_token]
         bos = vocab.stoi[self.fields['tgt'].init_token]
+        end_of_sentence = vocab.stoi['</t>']
+        print("MAX SENTENCES", self.max_sentences)
         beam = [onmt.translate.Beam(beam_size, n_best=self.n_best,
                                     cuda=self.cuda,
                                     global_scorer=self.global_scorer,
@@ -621,7 +624,9 @@ class Translator(object):
                                     min_length=self.min_length,
                                     stepwise_penalty=self.stepwise_penalty,
                                     block_ngram_repeat=self.block_ngram_repeat,
-                                    exclusion_tokens=exclusion_tokens)
+                                    max_sentences=self.max_sentences,
+                                    exclusion_tokens=exclusion_tokens,
+                                    end_of_sentence=end_of_sentence)
                 for __ in range(batch_size)]
 
         # (1) Run the encoder on the src.
