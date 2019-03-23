@@ -405,7 +405,7 @@ def main():
                          'block_ngram_repeat': 3,
                          'ignore_when_blocking': ["."],
                          'replace_unk': True,
-                         'max_sentences': 2
+                         'max_sentences': 0
                          }
 
     # Simple Case

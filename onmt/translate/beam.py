@@ -102,6 +102,9 @@ class Beam(object):
             # sentence blocker
             le = len(self.next_ys)
             for j in range(self.next_ys[-1].size(0)):
+                if self.max_sentences == 0:
+                    word_probs[j][:] = -1e20
+                    word_probs[j][self._eos] = 0
                 if self.next_ys[-1][j] == self._dot:
                     hyp, _ = self.get_hyp(le-1, j)
                     num_sents = sum([1 for t in hyp if t == self._dot])
