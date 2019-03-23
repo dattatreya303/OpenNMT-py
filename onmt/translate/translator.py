@@ -1008,10 +1008,12 @@ class Translator(object):
                    or t.data[0] == tgt_eos \
                    or t.data[0] == self.fields["tgt"].vocab.stoi["."]:
                     continue
-                current_state = [list(s[:,ix,:].squeeze().cpu().numpy().tolist()) for s in stat]
+                current_state = [list(s[:,ix,:].squeeze().cpu().numpy().tolist())
+                                 for s in stat]
 
-
-                for pr, sc, st in zip(list(pred[ix].cpu().numpy()), list(sco[ix].cpu().numpy()), current_state):
+                for pr, sc, st in zip(list(pred[ix].cpu().numpy()),
+                                      list(sco[ix].cpu().numpy()),
+                                      current_state):
                     pred = build_target_tokens(src_vocab, int(pr))
                     current_dic = {"pred": pred,
                                    "score": float(sc),
