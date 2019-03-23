@@ -616,7 +616,6 @@ class Translator(object):
         eos = vocab.stoi[self.fields['tgt'].eos_token]
         bos = vocab.stoi[self.fields['tgt'].init_token]
         end_of_sentence = vocab.stoi['</t>']
-        print("MAX SENTENCES", self.max_sentences)
         beam = [onmt.translate.Beam(beam_size, n_best=self.n_best,
                                     cuda=self.cuda,
                                     global_scorer=self.global_scorer,

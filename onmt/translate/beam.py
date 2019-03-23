@@ -102,9 +102,6 @@ class Beam(object):
             # sentence blocker
             le = len(self.next_ys)
             for j in range(self.next_ys[-1].size(0)):
-                if self.max_sentences == 0:
-                    word_probs[j][:] = -1e20
-                    word_probs[j][self._eos] = 0
                 if self.next_ys[-1][j] == self._dot:
                     hyp, _ = self.get_hyp(le-1, j)
                     num_sents = sum([1 for t in hyp if t == self._dot])
@@ -140,6 +137,9 @@ class Beam(object):
                     if fail:
                         beam_scores[j] = -10e20
         else:
+            if self.max_sentences == 0:
+                word_probs[0][:] = -1e20
+                word_probs[0][self._eos] = 0
             beam_scores = word_probs[0]
         flat_beam_scores = beam_scores.view(-1)
         best_scores, best_scores_id = flat_beam_scores.topk(self.size, 0,
