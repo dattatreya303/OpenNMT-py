@@ -82,6 +82,21 @@ class ONMTmodelAPI():
             self.model_opt,
             global_scorer=self.scorer)
 
+    @staticmethod
+    def default_inference_options():
+        return {'k': 1,
+                'beam_size': 10,
+                'min_length': 35,
+                'stepwise_penalty': True,
+                'coverage_penalty': 'summary',
+                'beta': 10,
+                'length_penalty': 'wu',
+                'alpha': 1.0,
+                'block_ngram_repeat': 3,
+                'ignore_when_blocking': [".", "</t>", "<t>"],
+                'replace_unk': True,
+                }
+
     def format_payload(self, translation_list, batch_data, in_text):
         """
         Structure of Payload
@@ -233,7 +248,9 @@ class ONMTmodelAPI():
             res['attn'] = attnRes
             res['copy_attn'] = copyAttnRes
 
-            res['scores'] = trans.pred_scores[:self.translator.n_best]
+            pred_scores = [r.cpu().numpy().tolist() for r in
+                           trans.pred_scores[:self.translator.n_best]]
+            res['scores'] = pred_scores
             res['beam'] = batch_data['beam'][transIx]
             res['beam_trace'] = batch_data['beam_trace'][transIx]
 
