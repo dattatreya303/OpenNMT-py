@@ -52,10 +52,11 @@ class TranslationBuilder(object):
                len(translation_batch["predictions"]))
         batch_size = batch.batch_size
 
-        preds, pred_score, attn, gold_score, indices = list(zip(
+        preds, pred_score, attn, copy_attn, gold_score, indices = list(zip(
             *sorted(zip(translation_batch["predictions"],
                         translation_batch["scores"],
                         translation_batch["attention"],
+                        translation_batch["copy_attention"],
                         translation_batch["gold_score"],
                         batch.indices.data),
                     key=lambda x: x[-1])))
@@ -92,7 +93,7 @@ class TranslationBuilder(object):
 
             translation = Translation(
                 src[:, b] if src is not None else None,
-                src_raw, pred_sents, attn[b], pred_score[b],
+                src_raw, pred_sents, attn[b], copy_attn[b], pred_score[b],
                 gold_sent, gold_score[b]
             )
             translations.append(translation)
@@ -117,11 +118,13 @@ class Translation(object):
     """
 
     def __init__(self, src, src_raw, pred_sents,
-                 attn, pred_scores, tgt_sent, gold_score):
+                 attn, copy_attn,
+                 pred_scores, tgt_sent, gold_score):
         self.src = src
         self.src_raw = src_raw
         self.pred_sents = pred_sents
         self.attns = attn
+        self.copy_attns = copy_attn
         self.pred_scores = pred_scores
         self.gold_sent = tgt_sent
         self.gold_score = gold_score

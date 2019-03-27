@@ -361,6 +361,8 @@ class Translator(object):
         # Generator forward.
         if not self.copy_attn:
             attn = dec_attn["std"]
+            # small hack to not fail this
+            copy_attn = dec_attn["std"]
             log_probs = self.model.generator(dec_out.squeeze(0))
             # returns [(batch_size x beam_size) , vocab ] when 1 step
             # or [ tgt_len, batch_size, vocab ] when full sentence
@@ -388,7 +390,7 @@ class Translator(object):
             # returns [(batch_size x beam_size) , vocab ] when 1 step
             # or [ tgt_len, batch_size, vocab ] when full sentence
 
-        return log_probs, attn, contexts, p_copy
+        return log_probs, attn, contexts, p_copy, copy_attn
 
     def _fast_translate_batch(
         self,
@@ -400,203 +402,7 @@ class Translator(object):
         return_attention=False
     ):
         # TODO: faster code path for beam_size == 1.
-
-        # TODO: support these blacklisted features.
-        assert not self.dump_beam
-        assert not self.use_filter_pred
-        assert self.block_ngram_repeat == 0
-        assert self.global_scorer.beta == 0
-
-        beam_size = self.beam_size
-        batch_size = batch.batch_size
-        vocab = self.fields["tgt"].vocab
-        start_token = vocab.stoi[self.fields["tgt"].init_token]
-        end_token = vocab.stoi[self.fields["tgt"].eos_token]
-
-        # Encoder forward.
-        src, enc_states, memory_bank, src_lengths = self._run_encoder(
-            batch, data.data_type)
-        self.model.decoder.init_state(src, memory_bank, enc_states)
-
-        use_src_map = data.data_type == 'text' and self.copy_attn
-
-        results = {}
-        results["predictions"] = [[] for _ in range(batch_size)]  # noqa: F812
-        results["scores"] = [[] for _ in range(batch_size)]  # noqa: F812
-        results["attention"] = [[] for _ in range(batch_size)]  # noqa: F812
-        results["batch"] = batch
-        if "tgt" in batch.__dict__:
-            results["gold_score"] = self._score_target(
-                batch,
-                memory_bank,
-                src_lengths,
-                data,
-                batch.src_map if use_src_map else None
-            )
-            self.model.decoder.init_state(src, memory_bank, enc_states)
-        else:
-            results["gold_score"] = [0] * batch_size
-
-        # Tile states and memory beam_size times.
-        self.model.decoder.map_state(
-            lambda state, dim: tile(state, beam_size, dim=dim))
-        if isinstance(memory_bank, tuple):
-            memory_bank = tuple(tile(x, beam_size, dim=1) for x in memory_bank)
-            mb_device = memory_bank[0].device
-        else:
-            memory_bank = tile(memory_bank, beam_size, dim=1)
-            mb_device = memory_bank.device
-
-        memory_lengths = tile(src_lengths, beam_size)
-        src_map = (tile(batch.src_map, beam_size, dim=1)
-                   if use_src_map else None)
-
-        top_beam_finished = torch.zeros([batch_size], dtype=torch.uint8)
-        batch_offset = torch.arange(batch_size, dtype=torch.long)
-        beam_offset = torch.arange(
-            0, batch_size * beam_size, step=beam_size, dtype=torch.long,
-            device=mb_device)
-        alive_seq = torch.full(
-            [batch_size * beam_size, 1], start_token, dtype=torch.long,
-            device=mb_device)
-        alive_attn = None
-
-        # Give full probability to the first beam on the first step.
-        topk_log_probs = torch.tensor(
-            [0.0] + [float("-inf")] * (beam_size - 1), device=mb_device
-        ).repeat(batch_size)
-
-        # Structure that holds finished hypotheses.
-        hypotheses = [[] for _ in range(batch_size)]  # noqa: F812
-
-        for step in range(max_length):
-            decoder_input = alive_seq[:, -1].view(1, -1, 1)
-
-            log_probs, attn = self._decode_and_generate(
-                decoder_input,
-                memory_bank,
-                batch,
-                data,
-                memory_lengths=memory_lengths,
-                src_map=src_map,
-                step=step,
-                batch_offset=batch_offset
-            )
-
-            vocab_size = log_probs.size(-1)
-
-            if step < min_length:
-                log_probs[:, end_token] = -1e20
-
-            # Multiply probs by the beam probability.
-            log_probs += topk_log_probs.view(-1).unsqueeze(1)
-
-            alpha = self.global_scorer.alpha
-            length_penalty = ((5.0 + (step + 1)) / 6.0) ** alpha
-
-            # Flatten probs into a list of possibilities.
-            curr_scores = log_probs / length_penalty
-            curr_scores = curr_scores.reshape(-1, beam_size * vocab_size)
-            topk_scores, topk_ids = curr_scores.topk(beam_size, dim=-1)
-
-            # Recover log probs.
-            topk_log_probs = topk_scores * length_penalty
-
-            # Resolve beam origin and true word ids.
-            topk_beam_index = topk_ids.div(vocab_size)
-            topk_ids = topk_ids.fmod(vocab_size)
-
-            # Map beam_index to batch_index in the flat representation.
-            batch_index = (
-                    topk_beam_index
-                    + beam_offset[:topk_beam_index.size(0)].unsqueeze(1))
-            select_indices = batch_index.view(-1)
-
-            # Append last prediction.
-            alive_seq = torch.cat(
-                [alive_seq.index_select(0, select_indices),
-                 topk_ids.view(-1, 1)], -1)
-            if return_attention:
-                current_attn = attn.index_select(1, select_indices)
-                if alive_attn is None:
-                    alive_attn = current_attn
-                else:
-                    alive_attn = alive_attn.index_select(1, select_indices)
-                    alive_attn = torch.cat([alive_attn, current_attn], 0)
-
-            is_finished = topk_ids.eq(end_token)
-            if step + 1 == max_length:
-                is_finished.fill_(1)
-
-            # Save finished hypotheses.
-            if is_finished.any():
-                # Penalize beams that finished.
-                topk_log_probs.masked_fill_(is_finished, -1e10)
-                is_finished = is_finished.to('cpu')
-                top_beam_finished |= is_finished[:, 0].eq(1)
-                predictions = alive_seq.view(-1, beam_size, alive_seq.size(-1))
-                attention = (
-                    alive_attn.view(
-                        alive_attn.size(0), -1, beam_size, alive_attn.size(-1))
-                    if alive_attn is not None else None)
-                non_finished_batch = []
-                for i in range(is_finished.size(0)):
-                    b = batch_offset[i]
-                    finished_hyp = is_finished[i].nonzero().view(-1)
-                    # Store finished hypotheses for this batch.
-                    for j in finished_hyp:
-                        hypotheses[b].append((
-                            topk_scores[i, j],
-                            predictions[i, j, 1:],  # Ignore start_token.
-                            attention[:, i, j, :memory_lengths[i]]
-                            if attention is not None else None))
-                    # End condition is the top beam finished and we can return
-                    # n_best hypotheses.
-                    if top_beam_finished[i] and len(hypotheses[b]) >= n_best:
-                        best_hyp = sorted(
-                            hypotheses[b], key=lambda x: x[0], reverse=True)
-                        for n, (score, pred, attn) in enumerate(best_hyp):
-                            if n >= n_best:
-                                break
-                            results["scores"][b].append(score)
-                            results["predictions"][b].append(pred)
-                            results["attention"][b].append(
-                                attn if attn is not None else [])
-                    else:
-                        non_finished_batch.append(i)
-                non_finished = torch.tensor(non_finished_batch)
-                # If all sentences are translated, no need to go further.
-                if len(non_finished) == 0:
-                    break
-                # Remove finished batches for the next step.
-                top_beam_finished = top_beam_finished.index_select(
-                    0, non_finished)
-                batch_offset = batch_offset.index_select(0, non_finished)
-                non_finished = non_finished.to(topk_ids.device)
-                topk_log_probs = topk_log_probs.index_select(0, non_finished)
-                batch_index = batch_index.index_select(0, non_finished)
-                select_indices = batch_index.view(-1)
-                alive_seq = predictions.index_select(0, non_finished) \
-                    .view(-1, alive_seq.size(-1))
-                if alive_attn is not None:
-                    alive_attn = attention.index_select(1, non_finished) \
-                        .view(alive_attn.size(0),
-                              -1, alive_attn.size(-1))
-
-            # Reorder states.
-            if isinstance(memory_bank, tuple):
-                memory_bank = tuple(x.index_select(1, select_indices)
-                                    for x in memory_bank)
-            else:
-                memory_bank = memory_bank.index_select(1, select_indices)
-
-            memory_lengths = memory_lengths.index_select(0, select_indices)
-            self.model.decoder.map_state(
-                lambda state, dim: state.index_select(dim, select_indices))
-            if src_map is not None:
-                src_map = src_map.index_select(1, select_indices)
-
-        return results
+        pass
 
     def _translate_batch(self, batch, data,
                          return_states=False,
@@ -636,10 +442,11 @@ class Translator(object):
         words_so_far = 0
         # If we have partial translation, run decoder over them
         pref_attn = None
+        pref_copy_attn = None
         if partial:
             print("partial in Translator", partial)
             partial_pre = [p[:-1] for p in partial]
-            dec_states, _, pref_attn, __ = self._run_pred(
+            dec_states, _, pref_attn, __, pref_copy_attn = self._run_pred(
                 src, memory_bank,
                 enc_states, batch,
                 partial_pre, pad, bos,
@@ -661,6 +468,7 @@ class Translator(object):
         results["predictions"] = []
         results["scores"] = []
         results["attention"] = []
+        results["copy_attention"] = []
         results["batch"] = batch
         if "tgt" in batch.__dict__:
             results["gold_score"] = self._score_target(
@@ -696,19 +504,21 @@ class Translator(object):
             inp = inp.view(1, -1, 1)
 
             # (b) Decode and forward
-            out, beam_attn, contexts, p_copy = self._decode_and_generate(
+            out, beam_attn, contexts, p_copy, beam_copy_attn = self._decode_and_generate(
                 inp, memory_bank, batch, data, memory_lengths=memory_lengths,
                 src_map=src_map, step=i, selection_mask=selection_mask
             )
             out = out.view(batch_size, beam_size, -1)
             beam_attn = beam_attn.view(batch_size, beam_size, -1)
+            beam_copy_attn = beam_copy_attn.view(batch_size, beam_size, -1)
 
             # (c) Advance each beam.
             select_indices_array = []
             # Loop over the batch_size number of beam
             for j, b in enumerate(beam):
                 b.advance(out[j, :],
-                          beam_attn.data[j, :, :memory_lengths[j]])
+                          beam_attn.data[j, :, :memory_lengths[j]],
+                          beam_copy_attn.data[j, :, :memory_lengths[j]])
                 select_indices_array.append(
                     b.get_current_origin() + j * beam_size)
             select_indices = torch.cat(select_indices_array)
@@ -717,8 +527,7 @@ class Translator(object):
                 lambda state, dim: state.index_select(dim, select_indices))
 
         # (4) Extract sentences from beam.
-         # (4) Extract sentences from beam.
-        ret = self._from_beam(beam, partial, pref_attn)
+        ret = self._from_beam(beam, partial, pref_attn, pref_copy_attn)
 
         def build_target_tokens(src_vocab, tok):
             vocab = self.fields["tgt"].vocab
@@ -755,9 +564,12 @@ class Translator(object):
                 # print("cur_top", cur_tops.numpy())
                 # print("cur_preds", b.next_ys[ix].numpy())
                 if not last:
-                    last = [[build_target_tokens(data.src_vocabs[0], b.next_ys[0][k])] for k in cur_tops]
+                    last = [[build_target_tokens(
+                        data.src_vocabs[0], b.next_ys[0][k])] for k
+                            in cur_tops]
                 else:
-                    last = [last[b.prev_ks[ix][a]] + [build_target_tokens(data.src_vocabs[0], b.next_ys[ix][k])] for a, k
+                    last = [last[b.prev_ks[ix][a]] + [build_target_tokens(
+                        data.src_vocabs[0], b.next_ys[ix][k])] for a, k
                             in enumerate(cur_tops)]
                 all_current.append(last)
             trace[j] = all_current
@@ -787,7 +599,7 @@ class Translator(object):
             target_context = [[] for predIx in range(batch.batch_size)]
             target_extra = [[] for predIx in range(batch.batch_size)]
             for b in resorted:
-                tstates, context, attn, decoder_extra = self._run_pred(
+                tstates, context, attn, decoder_extra, copy_attn = self._run_pred(
                     src, memory_bank,
                     enc_states, batch,
                     b, pad, bos,
@@ -797,8 +609,10 @@ class Translator(object):
 
                 if batch.batch_size > 1:
                     for predIx in range(batch.batch_size):
-                        target_states[predIx].append(tstates[:,predIx,:].squeeze())
-                        target_context[predIx].append(context[predIx,:,:].squeeze())
+                        target_states[predIx].append(
+                            tstates[:, predIx, :].squeeze())
+                        target_context[predIx].append(
+                            context[predIx, :, :].squeeze())
                 else:
                     target_states[0].append(tstates)
                     target_context[0].append(context)
@@ -820,17 +634,19 @@ class Translator(object):
             # Todo: add copy attn if applicable, add copy switch for each step
         return ret
 
-    def _from_beam(self, beam, partial=[], pref_attn=None):
+    def _from_beam(self, beam, partial=[], pref_attn=None, pref_copy_attn=None):
         ret = {"predictions": [],
                "scores": [],
-               "attention": []}
+               "attention": [],
+               "copy_attention": []}
         for j, b in enumerate(beam):
             n_best = self.n_best
             scores, ks = b.sort_finished(minimum=n_best)
-            hyps, attn = [], []
+            hyps, attn, copy_attn = [], [], []
             if partial:
                 prefix = partial[j]
-                prev_attn = pref_attn[:,j,:].data.squeeze(1)
+                prev_attn = pref_attn[:, j, :].data.squeeze(1)
+                prev_copy_attn = pref_copy_attn.unsqueeze(1)[:, j, :].data.squeeze(1)
             else:
                 prefix = []
             for i, (times, k) in enumerate(ks[:n_best]):
@@ -838,15 +654,18 @@ class Translator(object):
                 # for ix in range(times):
                 #     h, _ = b.get_hyp(ix, k)
                 #     print(h)
-                hyp, att = b.get_hyp(times, k)
+                hyp, att, copy_att = b.get_hyp(times, k)
                 if partial:
                     src_width = att.size(1)
-                    att = torch.cat([prev_attn[:,:src_width], att], dim=0)
+                    att = torch.cat([prev_attn[:, :src_width], att], dim=0)
+                    copy_att = torch.cat([prev_copy_attn[:, :src_width], att], dim=0)
                 hyps.append(prefix + hyp)
                 attn.append(att)
+                copy_attn.append(copy_att)
             ret["predictions"].append(hyps)
             ret["scores"].append(scores)
             ret["attention"].append(attn)
+            ret["copy_attention"].append(copy_attn)
         # print(ret)
         return ret
 
@@ -874,6 +693,7 @@ class Translator(object):
             decoder_in, memory_bank, memory_lengths=memory_lengths)
 
         decoder_extra = {}
+        copy_attn = None
         # Run Generator in Copy attn to get p_copy for each step
         if self.copy_attn:
             _, p_copy, copy_attn = self.model.generator.forward(
@@ -891,7 +711,8 @@ class Translator(object):
             dec_out_ret = None
             weighted_context_ret = None
 
-        return dec_out_ret, weighted_context_ret, attn['std'], decoder_extra
+        return (dec_out_ret, weighted_context_ret,
+                attn['std'], decoder_extra, copy_attn)
 
     def _get_top_k(self,
                    src,
@@ -926,7 +747,6 @@ class Translator(object):
             tgt_in = tgt_in.masked_fill(
                 tgt_in.gt(len(self.fields["tgt"].vocab) - 1), 0)
 
-
         self.model.decoder.init_state(
             src, context, enc_states)
         _, src_lengths = batch.src
@@ -944,7 +764,8 @@ class Translator(object):
                 alt_s = []
                 for o in out:
                     o = o.view(-1)
-                    best_scores, best_scores_id = o.squeeze().topk(k, 0, True, True)
+                    best_scores, best_scores_id = o.squeeze().topk(
+                        k, 0, True, True)
                     alt.append(best_scores_id.data)
                     alt_s.append(best_scores.data)
 
@@ -971,7 +792,8 @@ class Translator(object):
                 alt_s = []
                 for o in out:
                     o = o.view(-1)
-                    best_scores, best_scores_id = o.squeeze().topk(k, 0, True, True)
+                    best_scores, best_scores_id = o.squeeze().topk(
+                        k, 0, True, True)
                     alt.append(best_scores_id)
                     alt_s.append(best_scores)
                     # print(best_scores.data, best_scores_id.data)
@@ -984,7 +806,7 @@ class Translator(object):
             src, context, enc_states)
         for ix, t in enumerate(tgt_in.data):
             alt = torch.stack(alt_preds[ix]).view(k, -1).unsqueeze(2)
-            prev = tgt_in.data[:ix+1]
+            # prev = tgt_in.data[:ix+1]
             # Precompute initial state
             dec_out, _, __ = self.model.decoder(
                 tgt_in[ix].unsqueeze(0), context, memory_lengths=src_lengths)
@@ -992,13 +814,14 @@ class Translator(object):
             c_out = []
             for ix2, a in enumerate(alt):
                 # Forward the latest tokens
-                if int(a) > len(self.fields["tgt"].vocab) -1:
+                if int(a) > len(self.fields["tgt"].vocab) - 1:
                     a = a.fill_(0)
                 self.model.decoder.state = deepcopy(fix_dec_states)
                 d_out, _, __ = self.model.decoder(
                     a.unsqueeze(0), context, memory_lengths=src_lengths)
                 c_out.append(d_out.data)
-                # write these into the correct positions d_out -> in decoder states one per step
+                # write these into the correct positions d_out
+                # -> in decoder states one per step
             out_states.append(c_out)
 
         def build_target_tokens(src_vocab, tok):
@@ -1009,9 +832,10 @@ class Translator(object):
                 return src_vocab.itos[tok - len(vocab)]
 
         # Assemble reply
-        res = {ix:[] for ix in range(tgt_in.size(1))}
+        res = {ix: [] for ix in range(tgt_in.size(1))}
         # Iterate over time steps
-        for targ, stat, pred, sco in zip(tgt_in, out_states, alt_preds, alt_scores):
+        for targ, stat, pred, sco in zip(tgt_in, out_states,
+                                         alt_preds, alt_scores):
             # Iterate over batch
             for ix, t in enumerate(targ):
                 outs = []
@@ -1021,7 +845,7 @@ class Translator(object):
                    or t.data[0] == tgt_eos \
                    or t.data[0] == self.fields["tgt"].vocab.stoi["."]:
                     continue
-                current_state = [list(s[:,ix,:].squeeze().cpu().numpy().tolist())
+                current_state = [list(s[:, ix, :].squeeze().cpu().numpy().tolist())
                                  for s in stat]
 
                 for pr, sc, st in zip(list(pred[ix].cpu().numpy()),
@@ -1039,7 +863,9 @@ class Translator(object):
         # pp.pprint(res)
         return res
 
-    def _score_target(self, batch, memory_bank, src_lengths, data, src_map, tgt_pad):
+    def _score_target(self, batch, memory_bank,
+                      src_lengths, data,
+                      src_map, tgt_pad):
         tgt_in = inputters.make_features(batch, 'tgt')[:-1]
 
         log_probs, attn = self._decode_and_generate(

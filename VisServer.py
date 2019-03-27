@@ -201,14 +201,17 @@ class ONMTmodelAPI():
             # Fill decoder+Attn Result
             decoderRes = []
             attnRes = []
+            copyAttnRes = []
             for ix, p in enumerate(trans.pred_sents[:self.translator.n_best]):
                 if not p:
                     continue
                 topIx = []
                 topIxAttn = []
-                for tokIx, (token, attn, state, cstar) in enumerate(zip(
+                topIxCopyAttn = []
+                for tokIx, (token, attn, copy_attn, state, cstar) in enumerate(zip(
                         p,
                         trans.attns[ix],
+                        trans.copy_attns[ix],
                         batch_data["target_states"][transIx][ix],
                         batch_data['target_context'][transIx][ix])):
                     currentDec = {}
@@ -220,12 +223,15 @@ class ONMTmodelAPI():
                         currentDec[key] = float(value[tokIx+1].item())
                     topIx.append(currentDec)
                     topIxAttn.append(attn.tolist())
+                    topIxCopyAttn.append(copy_attn.tolist())
                     # if t in ['.', '!', '?']:
                     #     break
                 decoderRes.append(topIx)
                 attnRes.append(topIxAttn)
+                copyAttnRes.append(topIxCopyAttn)
             res['decoder'] = decoderRes
             res['attn'] = attnRes
+            res['copy_attn'] = copyAttnRes
 
             res['scores'] = trans.pred_scores[:self.translator.n_best]
             res['beam'] = batch_data['beam'][transIx]
@@ -414,10 +420,10 @@ def main():
                             inference_options=inference_options)
     print_only_pred_text(reply)
     # Selection Mask
-    # reply = model.translate(["this is a test ubiquotus ."],
-    #                         selection_mask=[[1, 1, 1, 1, 0, 1]],
-    #                         inference_options=inference_options)
-    # print_only_pred_text(reply)
+    reply = model.translate(["this is a test ubiquotus ."],
+                            selection_mask=[[1, 1, 1, 1, 0, 1]],
+                            inference_options=inference_options)
+    print_only_pred_text(reply)
     # Prefix
     reply = model.translate(["this is a long test ubiquotus ."],
                             inference_options=inference_options,
@@ -428,7 +434,7 @@ def main():
     # reply = model.translate(["this is a test ubiquotus ."],
     #                         selection_mask=[[1, 1, 1, 1, 0, 1]],
     #                         inference_options=inference_options,
-    #                         partial_decode=["this is"])
+    #                         partial_decode=["<t> this is"])
     # print_only_pred_text(reply)
 
     # reply = model.translate(["scientists at nasa are one step closer to understanding how much water could have existed on primeval mars . these new findings also indicate how primitive water reservoirs there could have evolved over billions of years , indicating that early oceans on the red planet might have held more water than earth 's arctic ocean , nasa scientists reveal in a study published friday in the journal science . `` our study provides a solid estimate of how much water mars once had , by determining how much water was lost to space , '' said geronimo villanueva , a scientist at nasa 's goddard space flight center . `` with this work , we can better understand the history of water on mars . '' to find answers to this age-old question about martian water molecules , scientists used the world 's three major infrared telescopes , in chile and hawaii , to measure traces of water in the planet 's atmosphere over a range of areas and seasons , spanning from march 2008 to january 2014 . `` from the ground , we could take a snapshot of the whole hemisphere on a single night , '' said goddard 's michael mumma . scientists looked at the ratio of two different forms -- or isotopes -- of water , h2o and hdo . the latter is made heavier by one of its hydrogen atoms , called deuterium , which has a neutron at its core in addition to the proton that all hydrogen atoms have . that weighed down hdo more , while larger amounts of hydrogen from h2o floated into the atmosphere , broke away from mars ' low gravity and disappeared into space . as a result , water trapped in mars ' polar ice caps has a much higher level of hdo than fluid water on earth does , the scientists said . the scientists compared the ratio of h2o to hdo in mars ' atmosphere today to the ratio of the two molecules trapped inside a mars meteorite , a stone that broke off from mars -- perhaps when an asteroid hit -- and landed on earth some 4.5 billion years ago . they were able to determine how much that ratio had changed over time and estimate how much water has disappeared from mars -- about 87 % . the findings indicate that the red planet could have had its fair share of blue waters , possibly even yielding an ocean . according to nasa , there might have been enough water to cover up to 20 % of mars ' surface . that would amount to an ocean proportionally larger than the atlantic on earth . `` this ocean had a maximum depth of around 5,000 feet or around one mile deep , '' said villanueva . nasa scientists say that much of this water loss happened over billions of years , along with a loss of atmosphere . and as the planet 's atmospheric pressure dropped , it was harder for water to stay in liquid form . heat also contributed to its evaporation . as a result , the remaining primeval ocean water continued to move toward the poles , where it eventually froze . `` with mars losing that much water , the planet was very likely wet for a longer period of time than was previously thought , suggesting it might have been habitable for longer , '' said mumma . cnn 's ben brumfield contributed to this report ."],
@@ -459,7 +465,7 @@ def main():
 
     # Debug options
 
-    print_only_pred_text(reply)
+    # print_only_pred_text(reply)
     # print(json.dumps(reply, indent=2, sort_keys=True))
 
 

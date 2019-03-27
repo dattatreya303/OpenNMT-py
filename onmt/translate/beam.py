@@ -48,6 +48,7 @@ class Beam(object):
 
         # The attentions (matrix) for each time.
         self.attn = []
+        self.copy_attn = []
 
         # Time and k pair for finished.
         self.finished = []
@@ -91,7 +92,7 @@ class Beam(object):
         self.global_state["coverage"] = self.pre_attn
         self.words_so_far = words_so_far
 
-    def advance(self, word_probs, attn_out):
+    def advance(self, word_probs, attn_out, copy_attn_out):
         """
         Given prob over words for every last beam `wordLk` and attention
         `attn_out`: Compute and update the beam search.
@@ -117,7 +118,7 @@ class Beam(object):
             le = len(self.next_ys)
             for j in range(self.next_ys[-1].size(0)):
                 if self.next_ys[-1][j] == self._dot:
-                    hyp, _ = self.get_hyp(le-1, j)
+                    hyp, _, __ = self.get_hyp(le-1, j)
                     num_sents = sum([1 for t in hyp if t == self._dot])
                     if num_sents >= self.max_sentences:
                         word_probs[j][:] = -1e20
@@ -134,7 +135,7 @@ class Beam(object):
                 ngrams = []
                 le = len(self.next_ys)
                 for j in range(self.next_ys[-1].size(0)):
-                    hyp, _ = self.get_hyp(le - 1, j)
+                    hyp, _, __ = self.get_hyp(le - 1, j)
                     if self.partial is not None:
                         hyp = [torch.LongTensor([t])[0] for t in self.partial[0]] + hyp
                     ngrams = set()
@@ -170,11 +171,12 @@ class Beam(object):
         self.prev_ks.append(prev_k)
         self.next_ys.append((best_scores_id - prev_k * num_words))
         self.attn.append(attn_out.index_select(0, prev_k))
+        self.copy_attn.append(copy_attn_out.index_select(0, prev_k))
         self.global_scorer.update_global_state(self)
 
         for i in range(self.next_ys[-1].size(0)):
             if self.next_ys[-1][i] == self._eos:
-                hyp, _ = self.get_hyp(len(self.next_ys)-1, i)
+                hyp, _, __ = self.get_hyp(len(self.next_ys)-1, i)
                 num_sents = sum([1 for t in hyp if t==self._dot])
                 global_scores = self.global_scorer.score(self, self.scores)
                 s = global_scores[i]
@@ -207,12 +209,13 @@ class Beam(object):
         """
         Walk back to construct the full hypothesis.
         """
-        hyp, attn = [], []
+        hyp, attn, copy_attn = [], [], []
         for j in range(len(self.prev_ks[:timestep]) - 1, -1, -1):
             hyp.append(self.next_ys[j + 1][k])
             attn.append(self.attn[j][k])
+            copy_attn.append(self.copy_attn[j][k])
             k = self.prev_ks[j][k]
-        return hyp[::-1], torch.stack(attn[::-1])
+        return hyp[::-1], torch.stack(attn[::-1]), torch.stack(copy_attn[::-1])
 
 
 class GNMTGlobalScorer(object):
