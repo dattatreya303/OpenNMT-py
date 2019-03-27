@@ -366,9 +366,10 @@ class Translator(object):
             # or [ tgt_len, batch_size, vocab ] when full sentence
         else:
             attn = dec_attn["copy"]
-            scores, p_copy = self.model.generator(dec_out.view(-1, dec_out.size(2)),
-                                          attn.view(-1, attn.size(2)),
-                                          src_map, selection_mask)
+            scores, p_copy, copy_attn = self.model.generator(
+                dec_out.view(-1, dec_out.size(2)),
+                attn.view(-1, attn.size(2)),
+                src_map, selection_mask)
             # here we have scores [tgt_lenxbatch, vocab] or [beamxbatch, vocab]
             if batch_offset is None:
                 scores = scores.view(batch.batch_size, -1, scores.size(-1))
@@ -642,6 +643,7 @@ class Translator(object):
                 src, memory_bank,
                 enc_states, batch,
                 partial_pre, pad, bos,
+                tags=selection_mask,
                 src_map=batch.src_map.data)
             # Pref attn is word x batch x source
             # This I need to modify in beam
@@ -650,6 +652,8 @@ class Translator(object):
 
             # Update counter of how many words were already seen
             words_so_far = len(partial_pre[0]) + 1
+            for b in beam:
+                b.update_partial(partial, pref_attn, words_so_far)
         else:
             self.model.decoder.init_state(src, memory_bank, enc_states)
 
@@ -763,7 +767,6 @@ class Translator(object):
             ret["gold_score"] = self._run_target(batch, data)
         ret["batch"] = batch
 
-
         if return_states:
             ret["context"] = memory_bank
             """
@@ -805,7 +808,8 @@ class Translator(object):
                                   batch, resorted[0], pad, bos, eos,
                                   data=data,
                                   src_vocab=data.src_vocabs[0],
-                                  src_map=batch.src_map.data)
+                                  src_map=batch.src_map.data,
+                                  selection_mask=selection_mask)
             ret["beam"] = res
             ret["beam_trace"] = trace
 
@@ -848,7 +852,7 @@ class Translator(object):
 
     def _run_pred(self, src, memory_bank, enc_states,
                   batch, pred, tgt_pad, tgt_bos,
-                  src_map=None):
+                  tags=None, src_map=None):
         tt = torch.cuda if self.cuda else torch
         max_len = len(max(pred, key=len))
         memory_bank = memory_bank[:, :batch.batch_size, :]
@@ -872,9 +876,11 @@ class Translator(object):
         decoder_extra = {}
         # Run Generator in Copy attn to get p_copy for each step
         if self.copy_attn:
-            _, p_copy = self.model.generator.forward(dec_out.squeeze(1),
-                                                   attn["copy"].squeeze(1),
-                                                   src_map)
+            _, p_copy, copy_attn = self.model.generator.forward(
+                dec_out.squeeze(1),
+                attn["copy"].squeeze(1),
+                src_map,
+                selection_mask=tags)
             decoder_extra['p_copy'] = p_copy.squeeze(1)
 
         # Special case -> only <s> gets fed
@@ -899,7 +905,8 @@ class Translator(object):
                    k=5,
                    data=None,
                    src_map=None,
-                   src_vocab=None):
+                   src_vocab=None,
+                   selection_mask=None):
         """
         Computes the top k predictions for each time step.
         """
@@ -946,9 +953,11 @@ class Translator(object):
                 alt_scores.append(alt_s)
         else:
             for ix, (dec, copy_attn) in enumerate(zip(dec_out, attn['copy'])):
-                out, p_copy = self.model.generator.forward(dec,
-                                                           copy_attn,
-                                                           src_map)
+                out, p_copy, copy_attn = self.model.generator.forward(
+                    dec,
+                    copy_attn,
+                    src_map,
+                    selection_mask)
                 # beam x (tgt_vocab + extra_vocab)
                 out = data.collapse_copy_scores(
                     out.data.view(1, 1, -1),

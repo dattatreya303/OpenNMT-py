@@ -101,7 +101,7 @@ class CopyGenerator(nn.Module):
             src_map.transpose(0, 1)
         ).transpose(0, 1)
         copy_prob = copy_prob.contiguous().view(-1, cvocab)
-        return torch.cat([out_prob, copy_prob], 1), p_copy
+        return torch.cat([out_prob, copy_prob], 1), p_copy, mul_attn
 
 
 class CopyGeneratorLoss(nn.Module):

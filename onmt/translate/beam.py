@@ -69,6 +69,11 @@ class Beam(object):
         self.block_ngram_repeat = block_ngram_repeat
         self.exclusion_tokens = exclusion_tokens
 
+        # Special case partial decode
+        self.partial = None
+        self.pre_attn = None
+        self.words_so_far = 0
+
     def get_current_state(self):
         "Get the outputs for the current timestep."
         return self.next_ys[-1]
@@ -76,6 +81,15 @@ class Beam(object):
     def get_current_origin(self):
         "Get the backpointers for the current timestep."
         return self.prev_ks[-1]
+
+    def update_partial(self,
+                       partial_in,
+                       prev_attns,
+                       words_so_far):
+        self.partial = partial_in
+        self.pre_attn = prev_attns.sum(0).repeat(self.size, 1)
+        self.global_state["coverage"] = self.pre_attn
+        self.words_so_far = words_so_far
 
     def advance(self, word_probs, attn_out):
         """
@@ -94,7 +108,7 @@ class Beam(object):
             self.global_scorer.update_score(self, attn_out)
         # force the output to be longer than self.min_length
         cur_len = len(self.next_ys)
-        if cur_len < self.min_length:
+        if cur_len < self.min_length - self.words_so_far:
             for k in range(len(word_probs)):
                 word_probs[k][self._eos] = -1e20
         # Sum the previous scores.
@@ -121,6 +135,8 @@ class Beam(object):
                 le = len(self.next_ys)
                 for j in range(self.next_ys[-1].size(0)):
                     hyp, _ = self.get_hyp(le - 1, j)
+                    if self.partial is not None:
+                        hyp = [torch.LongTensor([t])[0] for t in self.partial[0]] + hyp
                     ngrams = set()
                     fail = False
                     gram = []
@@ -249,13 +265,18 @@ class GNMTGlobalScorer(object):
         "Keeps the coverage vector as sum of attentions"
         if len(beam.prev_ks) == 1:
             beam.global_state["prev_penalty"] = beam.scores.clone().fill_(0.0)
-            beam.global_state["coverage"] = beam.attn[-1]
+            if "coverage" in beam.global_state.keys():# ["coverage"] is not None:
+                beam.global_state["coverage"] += beam.attn[-1]
+            else:
+                beam.global_state["coverage"] = beam.attn[-1]
+            # print("initial", beam.attn[-1].shape)
             self.cov_total = beam.attn[-1].sum(1)
         else:
             self.cov_total += torch.min(beam.attn[-1],
                                         beam.global_state['coverage']).sum(1)
             beam.global_state["coverage"] = beam.global_state["coverage"] \
                 .index_select(0, beam.prev_ks[-1]).add(beam.attn[-1])
+            # print(beam.global_state["coverage"].shape)
 
             prev_penalty = self.cov_penalty(beam,
                                             beam.global_state["coverage"],
