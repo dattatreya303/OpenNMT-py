@@ -5,7 +5,7 @@ import sys
 
 import h5py
 import torch
-
+import numpy as np
 
 import onmt.inputters
 import onmt.translate
@@ -97,7 +97,7 @@ class ONMTmodelAPI():
                 'replace_unk': True,
                 }
 
-    def format_payload(self, translation_list, batch_data, in_text):
+    def format_payload(self, translation_list, batch_data, in_text, selection_mask=None):
         """
         Structure of Payload
 
@@ -246,7 +246,14 @@ class ONMTmodelAPI():
                 copyAttnRes.append(topIxCopyAttn)
             res['decoder'] = decoderRes
             res['attn'] = attnRes
-            res['copy_attn'] = copyAttnRes
+            if selection_mask is not None:
+                attn_np = np.array(attnRes)
+                mask_expanded = np.tile(
+                    np.expand_dims(np.array(selection_mask), 1),
+                    (1, attn_np.shape[1], 1))
+                res['copy_attn'] = (attn_np * mask_expanded).tolist()
+            else:
+                res['copy_attn'] = copyAttnRes
 
             pred_scores = [r.cpu().numpy().tolist() for r in
                            trans.pred_scores[:self.translator.n_best]]
@@ -394,10 +401,11 @@ class ONMTmodelAPI():
         payload = self.format_payload(
             translation_list=translations,
             batch_data=batch_data,
-            in_text=in_text)
+            in_text=in_text,
+            selection_mask=selection_mask)
 
         # For debugging, uncomment this
-        # traverse_reply(payload)
+        traverse_reply(payload)
         return payload
 
 
@@ -461,11 +469,15 @@ def main():
                             selection_mask=[[1] * len(text_in.split())],
                             inference_options=inference_options)
     print_only_pred_text(reply)
+    print(np.array(reply[0]['attn']).shape)
+    print(np.array(reply[0]['copy_attn']).shape)
 
     reply = model.translate([text_in],
                             inference_options=inference_options,
                             partial_decode=[" ".join(['<t>', 'nasa', 'scientists', 'say', 'that', 'much', 'of', 'this', 'water', 'loss', 'happened', 'over', 'billions', 'of', 'years', ',', 'along', 'with', 'a', 'loss', 'of', 'atmosphere', '.', '</t>'])])
     print_only_pred_text(reply)
+    print(np.array(reply[0]['attn']).shape)
+    print(np.array(reply[0]['copy_attn']).shape)
 
     # Case with attn overwrite OR partial
     # reply = model.translate(["this is madness ."], attn_overwrite=[{2:0}])
