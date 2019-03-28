@@ -121,6 +121,8 @@ class Beam(object):
             for j in range(self.next_ys[-1].size(0)):
                 if self.next_ys[-1][j] == self._dot:
                     hyp, _, __ = self.get_hyp(le-1, j)
+                    if self.partial is not None:
+                        hyp = [torch.LongTensor([t])[0] for t in self.partial[0]] + hyp
                     num_sents = sum([1 for t in hyp if t == self._dot])
                     if num_sents >= self.max_sentences:
                         word_probs[j][:] = -1e20

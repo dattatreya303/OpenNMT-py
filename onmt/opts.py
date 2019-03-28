@@ -534,7 +534,7 @@ def translate_opts(parser):
               help='Beam size')
     group.add('--min_length', '-min_length', type=int, default=0,
               help='Minimum prediction length')
-    group.add('--max_length', '-max_length', type=int, default=100,
+    group.add('--max_length', '-max_length', type=int, default=250,
               help='Maximum prediction length.')
     group.add('--max_sent_length', '-max_sent_length', action=DeprecateAction,
               help="Deprecated, use `-max_length` instead")
