@@ -119,7 +119,7 @@ class Beam(object):
             # sentence blocker
             le = len(self.next_ys)
             for j in range(self.next_ys[-1].size(0)):
-                if self.next_ys[-1][j] == self._dot or cur_len > 20:
+                if self.next_ys[-1][j] == self._dot or cur_len + self.words_so_far > 70:
                     hyp, _, __ = self.get_hyp(le-1, j)
                     if self.partial is not None:
                         hyp = [torch.LongTensor([t])[0] for t in self.partial[0]] + hyp

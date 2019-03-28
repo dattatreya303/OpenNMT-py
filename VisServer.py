@@ -462,10 +462,10 @@ def main():
                             inference_options=inference_options)
     print_only_pred_text(reply)
 
-    # reply = model.translate([text_in],
-    #                         inference_options=inference_options,
-    #                         partial_decode=[" ".join(['<t>', 'nasa', 'scientists', 'say', 'that', 'much', 'of', 'this', 'water', 'loss', 'happened', 'over', 'billions', 'of', 'years', ',', 'along', 'with', 'a', 'loss', 'of', 'atmosphere', '.', '</t>'])])
-    # print_only_pred_text(reply)
+    reply = model.translate([text_in],
+                            inference_options=inference_options,
+                            partial_decode=[" ".join(['<t>', 'nasa', 'scientists', 'say', 'that', 'much', 'of', 'this', 'water', 'loss', 'happened', 'over', 'billions', 'of', 'years', ',', 'along', 'with', 'a', 'loss', 'of', 'atmosphere', '.', '</t>'])])
+    print_only_pred_text(reply)
 
     # Case with attn overwrite OR partial
     # reply = model.translate(["this is madness ."], attn_overwrite=[{2:0}])
