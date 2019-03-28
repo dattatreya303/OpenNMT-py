@@ -119,7 +119,7 @@ class Beam(object):
             # sentence blocker
             le = len(self.next_ys)
             for j in range(self.next_ys[-1].size(0)):
-                if self.next_ys[-1][j] == self._dot:
+                if self.next_ys[-1][j] == self._dot or cur_len > 20:
                     hyp, _, __ = self.get_hyp(le-1, j)
                     if self.partial is not None:
                         hyp = [torch.LongTensor([t])[0] for t in self.partial[0]] + hyp
@@ -129,7 +129,6 @@ class Beam(object):
                         word_probs[j][self._eos] = 0
                     if num_sents < self.min_sentences:
                         word_probs[j][self._eos] = -1e20
-
             beam_scores = word_probs + self.scores.unsqueeze(1)
             # Don't let EOS have children.
             for i in range(self.next_ys[-1].size(0)):
@@ -160,9 +159,16 @@ class Beam(object):
                     if fail:
                         beam_scores[j] = -10e20
         else:
+            if self.partial is not None:
+                num_sents = sum([1 for t in self.partial if t == self._dot])
+            else:
+                num_sents = 0
+
             if self.max_sentences == 0:
                 word_probs[0][:] = -1e20
                 word_probs[0][self._eos] = 0
+            elif self.min_sentences > num_sents:
+                word_probs[0][self._eos] = -1e20
             beam_scores = word_probs[0]
         flat_beam_scores = beam_scores.view(-1)
         best_scores, best_scores_id = flat_beam_scores.topk(self.size, 0,
