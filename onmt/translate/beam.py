@@ -24,6 +24,7 @@ class Beam(object):
                  stepwise_penalty=False,
                  block_ngram_repeat=0,
                  max_sentences=6,
+                 min_sentences=0,
                  exclusion_tokens=set(),
                  end_of_sentence=0):
 
@@ -64,6 +65,7 @@ class Beam(object):
         # Max prediction length
         self._dot = end_of_sentence
         self.max_sentences = max_sentences
+        self.min_sentences = min_sentences
 
         # Apply Penalty at every step
         self.stepwise_penalty = stepwise_penalty
@@ -123,6 +125,8 @@ class Beam(object):
                     if num_sents >= self.max_sentences:
                         word_probs[j][:] = -1e20
                         word_probs[j][self._eos] = 0
+                    if num_sents < self.min_sentences:
+                        word_probs[j][self._eos] = -1e20
 
             beam_scores = word_probs + self.scores.unsqueeze(1)
             # Don't let EOS have children.

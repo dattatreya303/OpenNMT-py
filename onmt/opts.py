@@ -546,6 +546,8 @@ def translate_opts(parser):
                        Helpful for summary penalty.""")
     group.add('--max_sentences', '-max_sentences', type=int, default=5,
               help='Max number of predicted sentences')
+    group.add('--min_sentences', '-min_sentences', type=int, default=5,
+              help='Min number of predicted sentences')
     group.add('--length_penalty', '-length_penalty', default='none',
               choices=['none', 'wu', 'avg'],
               help="""Length Penalty to use.""")

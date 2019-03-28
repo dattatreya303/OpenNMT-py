@@ -89,6 +89,7 @@ class Translator(object):
         self.min_length = opt.min_length
         self.stepwise_penalty = opt.stepwise_penalty
         self.max_sentences = opt.max_sentences
+        self.min_sentences = opt.min_sentences
         self.dump_beam = opt.dump_beam
         self.block_ngram_repeat = opt.block_ngram_repeat
         self.ignore_when_blocking = set(opt.ignore_when_blocking)
@@ -431,6 +432,7 @@ class Translator(object):
                                     stepwise_penalty=self.stepwise_penalty,
                                     block_ngram_repeat=self.block_ngram_repeat,
                                     max_sentences=self.max_sentences,
+                                    min_sentences=self.min_sentences,
                                     exclusion_tokens=exclusion_tokens,
                                     end_of_sentence=end_of_sentence)
                 for __ in range(batch_size)]
@@ -618,13 +620,13 @@ class Translator(object):
                     target_context[0].append(context)
                     target_extra[0].append(decoder_extra)
             # Get the top 5 for each time step
-            res = self._get_top_k(src, memory_bank, enc_states,
-                                  batch, resorted[0], pad, bos, eos,
-                                  data=data,
-                                  src_vocab=data.src_vocabs[0],
-                                  src_map=batch.src_map.data,
-                                  selection_mask=selection_mask)
-            ret["beam"] = res
+            # res = self._get_top_k(src, memory_bank, enc_states,
+            #                       batch, resorted[0], pad, bos, eos,
+            #                       data=data,
+            #                       src_vocab=data.src_vocabs[0],
+            #                       src_map=batch.src_map.data,
+            #                       selection_mask=selection_mask)
+            # ret["beam"] = res
             ret["beam_trace"] = trace
 
             ret["target_states"] = target_states
