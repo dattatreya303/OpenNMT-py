@@ -164,11 +164,11 @@ class Beam(object):
             else:
                 num_sents = 0
 
-            if self.max_sentences == 0 or self.max_sentences <= num_sents:
+            if num_sents < self.min_sentences:
+                word_probs[0][self._eos] = -1e20
+            elif self.max_sentences == 0 or num_sents >= self.max_sentences:
                 word_probs[0][:] = -1e20
                 word_probs[0][self._eos] = 0
-            elif self.min_sentences < num_sents:
-                word_probs[0][self._eos] = -1e20
             beam_scores = word_probs[0]
         flat_beam_scores = beam_scores.view(-1)
         best_scores, best_scores_id = flat_beam_scores.topk(self.size, 0,
