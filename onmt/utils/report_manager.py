@@ -2,7 +2,7 @@
 from __future__ import print_function
 import time
 from datetime import datetime
-
+import os
 import onmt
 
 from onmt.utils.logging import logger
@@ -12,12 +12,10 @@ def build_report_manager(opt):
     if opt.tensorboard:
         from tensorboardX import SummaryWriter
         tensorboard_log_dir = opt.tensorboard_log_dir
-
-        if not opt.train_from:
-            tensorboard_log_dir += datetime.now().strftime("/%b-%d_%H-%M-%S")
-
-        writer = SummaryWriter(tensorboard_log_dir,
-                               comment="Unmt")
+        run_name = opt.save_model.split("/")[-1]
+        dt = datetime.now().strftime("%b-%d_%H-%M-%S")
+        writer_name = os.path.join(opt.tensorboard_log_dir, run_name + "_" + dt)
+        writer = SummaryWriter(writer_name, comment="Unmt") 
     else:
         writer = None
 
@@ -131,7 +129,7 @@ class ReportMgr(ReportMgrBase):
         self.maybe_log_tensorboard(report_stats,
                                    "progress",
                                    learning_rate,
-                                   self.progress_step)
+                                   step)
         report_stats = onmt.utils.Statistics()
 
         return report_stats
