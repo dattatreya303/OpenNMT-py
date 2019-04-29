@@ -23,7 +23,8 @@ class Beam(object):
                  min_length=0,
                  stepwise_penalty=False,
                  block_ngram_repeat=0,
-                 exclusion_tokens=set()):
+                 exclusion_tokens=set(),
+                 vocab={}):
 
         self.size = size
         self.tt = torch.cuda if cuda else torch
@@ -63,6 +64,9 @@ class Beam(object):
         self.block_ngram_repeat = block_ngram_repeat
         self.exclusion_tokens = exclusion_tokens
 
+        # Vocab object
+        self.vocab = vocab
+
     def get_current_state(self):
         "Get the outputs for the current timestep."
         return self.next_ys[-1]
@@ -91,7 +95,27 @@ class Beam(object):
         if cur_len < self.min_length:
             for k in range(len(word_probs)):
                 word_probs[k][self._eos] = -1e20
-        # Sum the previous scores.
+        block_phrases = True
+        if block_phrases:
+            phrases = ["do n't know",
+                        "edit :",
+                        "Edit",
+                        "good idea",
+                        "no idea",
+                        "I am talking",
+                        "dick",
+                        "worth it"]
+            for j in range(self.next_ys[-1].size(0)):
+                hyp, _ = self.get_hyp(len(self.next_ys) - 1, j)
+                fail = False
+                text = [h.item() for h in hyp]
+                for p in phrases: 
+                    if p in text:
+                        fail = True
+                if fail:
+                    pass
+                print(text)
+                exit()
         if len(self.prev_ks) > 0:
             beam_scores = word_probs + self.scores.unsqueeze(1)
             # Don't let EOS have children.
@@ -121,6 +145,8 @@ class Beam(object):
                     if fail:
                         beam_scores[j] = -10e20
         else:
+            # Reduce probability of starting with I by some %
+            word_probs[0][self.vocab["I"]] *= 0.7
             beam_scores = word_probs[0]
         flat_beam_scores = beam_scores.view(-1)
         best_scores, best_scores_id = flat_beam_scores.topk(self.size, 0,
