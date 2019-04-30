@@ -498,6 +498,10 @@ def translate_opts(parser):
               the log probabilities will be averaged directly.
               Necessary for models whose output layers can assign
               zero probability.""")
+    group.add_argument('-constraint_file',
+                       help='File with copy probabilities.')
+    group.add_argument('-threshold', type=float, default=0.5,
+                       help="When to copy and when not to.")
 
     group = parser.add_argument_group('Data')
     group.add('--data_type', '-data_type', default="text",

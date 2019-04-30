@@ -4,6 +4,7 @@ from __future__ import print_function
 import configargparse
 import codecs
 import os
+import json
 import math
 
 import torch
@@ -117,6 +118,11 @@ class Translator(object):
         self.report_score = report_score
         self.logger = logger
 
+
+        # BU
+        self.constraint_file = opt.constraint_file
+        self.threshold = opt.threshold
+
         self.use_filter_pred = False
 
         # for debugging
@@ -192,6 +198,8 @@ class Translator(object):
             shuffle=False
         )
 
+        tag_file = open(self.constraint_file, 'r')
+
         builder = onmt.translate.TranslationBuilder(
             data, self.fields, self.n_best, self.replace_unk, tgt
         )
@@ -204,9 +212,15 @@ class Translator(object):
         all_scores = []
         all_predictions = []
 
-        for batch in data_iter:
+        for batch, tag_json in zip(data_iter, tag_file):
+            # parse constraint file
+            con = json.loads(tag_json)
+            words = con['words']
+            probs = [p[1] for p in con['class_probabilities'][:len(words)]]
+            tags = [1 if p > self.threshold else 0 for p in probs]
+
             batch_data = self.translate_batch(
-                batch, data, attn_debug, fast=self.fast
+                batch, data, attn_debug, fast=self.fast, tags=tags
             )
             translations = builder.from_batch(batch_data)
 
@@ -422,7 +436,7 @@ class Translator(object):
 
         return results
 
-    def translate_batch(self, batch, data, attn_debug, fast=False):
+    def translate_batch(self, batch, data, attn_debug, fast=False, tags=[]):
         """
         Translate a batch of sentences.
 
@@ -455,7 +469,7 @@ class Translator(object):
                     n_best=self.n_best,
                     return_attention=attn_debug or self.replace_unk)
             else:
-                return self._translate_batch(batch, data)
+                return self._translate_batch(batch, data, tags)
 
     def _run_encoder(self, batch, data_type):
         src = inputters.make_features(batch, 'src', data_type)
@@ -484,7 +498,8 @@ class Translator(object):
         memory_lengths,
         src_map=None,
         step=None,
-        batch_offset=None
+        batch_offset=None,
+        tags=[]
     ):
 
         tgt_field = self.fields["tgt"][0][1]
@@ -513,7 +528,7 @@ class Translator(object):
             attn = dec_attn["copy"]
             scores = self.model.generator(dec_out.view(-1, dec_out.size(2)),
                                           attn.view(-1, attn.size(2)),
-                                          src_map)
+                                          src_map, tags=tags)
             # here we have scores [tgt_lenxbatch, vocab] or [beamxbatch, vocab]
             if batch_offset is None:
                 scores = scores.view(batch.batch_size, -1, scores.size(-1))
@@ -740,7 +755,7 @@ class Translator(object):
 
         return results
 
-    def _translate_batch(self, batch, data):
+    def _translate_batch(self, batch, data, tags):
         # (0) Prep each of the components of the search.
         # And helper method for reducing verbosity.
         beam_size = self.beam_size
@@ -811,7 +826,7 @@ class Translator(object):
             # (b) Decode and forward
             out, beam_attn = self._decode_and_generate(
                 inp, memory_bank, batch, data, memory_lengths=memory_lengths,
-                src_map=src_map, step=i
+                src_map=src_map, step=i, tags=tags
             )
             out = out.view(batch_size, beam_size, -1)
             beam_attn = beam_attn.view(batch_size, beam_size, -1)
