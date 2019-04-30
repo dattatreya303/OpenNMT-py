@@ -67,6 +67,22 @@ class Beam(object):
         # Vocab object
         self.vocab = vocab
 
+        phrases_raw = ["do n't know",
+                       "talking about",
+                       "edit :",
+                       "Edit",
+                       "EDIT",
+                       "good idea",
+                       "no idea",
+                       "I am talking",
+                       "dick",
+                       "worth it",
+                       "big deal",
+                       "agree with you",
+                       "if you do n't like it"]
+        self.phrases = [[self.vocab[tok] for tok in p.split()] 
+                        for p in phrases_raw]
+
     def get_current_state(self):
         "Get the outputs for the current timestep."
         return self.next_ys[-1]
@@ -74,6 +90,19 @@ class Beam(object):
     def get_current_origin(self):
         "Get the backpointers for the current timestep."
         return self.prev_ks[-1]
+
+    def contains(self,sub, full):
+        M, N = len(full), len(sub)
+        i, LAST = 0, M-N+1
+        while True:
+            try:
+                found = full.index(sub[0], i, LAST)
+            except ValueError:
+                return False
+            if full[found:found+N] == sub:
+                return True
+            else:
+                i = found + 1
 
     def advance(self, word_probs, attn_out):
         """
@@ -95,27 +124,7 @@ class Beam(object):
         if cur_len < self.min_length:
             for k in range(len(word_probs)):
                 word_probs[k][self._eos] = -1e20
-        block_phrases = True
-        if block_phrases:
-            phrases = ["do n't know",
-                        "edit :",
-                        "Edit",
-                        "good idea",
-                        "no idea",
-                        "I am talking",
-                        "dick",
-                        "worth it"]
-            for j in range(self.next_ys[-1].size(0)):
-                hyp, _ = self.get_hyp(len(self.next_ys) - 1, j)
-                fail = False
-                text = [h.item() for h in hyp]
-                for p in phrases: 
-                    if p in text:
-                        fail = True
-                if fail:
-                    pass
-                print(text)
-                exit()
+
         if len(self.prev_ks) > 0:
             beam_scores = word_probs + self.scores.unsqueeze(1)
             # Don't let EOS have children.
@@ -123,12 +132,21 @@ class Beam(object):
                 if self.next_ys[-1][i] == self._eos:
                     beam_scores[i] = -1e20
 
-            # Block ngram repeats
-            if self.block_ngram_repeat > 0:
-                ngrams = []
+            for j in range(self.next_ys[-1].size(0)):
                 le = len(self.next_ys)
-                for j in range(self.next_ys[-1].size(0)):
-                    hyp, _ = self.get_hyp(le - 1, j)
+                hyp, _ = self.get_hyp(le - 1, j)
+
+                block_phrases = True
+                if block_phrases:
+                    fail = False
+                    text = [h.item() for h in hyp]
+                    for p in self.phrases: 
+                        if self.contains(p, text):
+                            fail = True
+                            break
+                
+                # Block ngram repeats
+                if self.block_ngram_repeat > 0 and not fail:
                     ngrams = set()
                     fail = False
                     gram = []
@@ -141,9 +159,10 @@ class Beam(object):
                             continue
                         if tuple(gram) in ngrams:
                             fail = True
+                            break
                         ngrams.add(tuple(gram))
-                    if fail:
-                        beam_scores[j] = -10e20
+                if fail:
+                    beam_scores[j] = -10e20
         else:
             # Reduce probability of starting with I by some %
             word_probs[0][self.vocab["I"]] *= 0.7
