@@ -50,6 +50,16 @@ def make_src(data, vocab):
     return alignment
 
 
+def get_src_indices(data, vocab):
+    src_size = max([t.size(0) for t in data])
+    src_vocab_size = max([t.max() for t in data]) + 1
+    alignment = torch.zeros(src_size, len(data), src_vocab_size)
+    for i, sent in enumerate(data):
+        for j, t in enumerate(sent):
+            alignment[j, i, t] = 1
+    return alignment
+
+
 def make_tgt(data, vocab):
     tgt_size = max([t.size(0) for t in data])
     alignment = torch.zeros(tgt_size, len(data)).long()
@@ -181,6 +191,14 @@ def get_fields(
     if with_align:
         word_align = AlignField()
         fields["align"] = word_align
+
+    src_index_map = Field(use_vocab=False, dtype=torch.float,
+            postprocessing=get_src_indices, sequential=False)
+    fields["src_index_map"] = src_index_map
+
+    other_src_index_map = Field(use_vocab=False, dtype=torch.float,
+                          postprocessing=get_src_indices, sequential=False)
+    fields["other_src_index_map"] = other_src_index_map
 
     return fields
 

@@ -92,7 +92,7 @@ class CopyGenerator(nn.Module):
         self.linear_copy = nn.Linear(input_size, 1)
         self.pad_idx = pad_idx
 
-    def forward(self, hidden, attn, src_map):
+    def forward(self, hidden, attn, src_map, siamese_attn=None):
         """
         Compute a distribution over the target dictionary
         extended by the dynamic dictionary implied by copying
@@ -105,6 +105,7 @@ class CopyGenerator(nn.Module):
                A sparse indicator matrix mapping each source word to
                its index in the "extended" vocab containing.
                ``(src_len, batch, extra_words)``
+           siamese_attn(FloatTensor): use with copy_prob.
         """
 
         # CHECKS
@@ -185,6 +186,7 @@ class CopyGeneratorLossCompute(NMTLossCompute):
             criterion, generator, lambda_coverage=lambda_coverage)
         self.tgt_vocab = tgt_vocab
         self.normalize_by_length = normalize_by_length
+        self.src_indicator = None
 
     def _make_shard_state(self, batch, output, range_, attns):
         """See base class for args description."""
@@ -197,12 +199,57 @@ class CopyGeneratorLossCompute(NMTLossCompute):
 
         shard_state.update({
             "copy_attn": attns.get("copy"),
+            "siamese_attn_0": attns.get("siamese")[0],
+            "siamese_attn_1": attns.get("siamese")[1],
             "align": batch.alignment[range_[0] + 1: range_[1]]
         })
         return shard_state
 
+    def _compute_siamese_loss(self, batch, siamese_attn_0, siamese_attn_1):
+
+        max_input_seq_len = 400
+
+        if self.src_indicator is None:
+            self.src_indicator = torch.Tensor(batch.batch_size, max_input_seq_len, self.criterion.vocab_size)
+
+        def _set_src_indicator(src):
+            self.src_indicator[:] = 0
+            for sent_id in range(src.size(1)):
+                for word_id in range(src.size(0)):
+                    self.src_indicator[sent_id, word_id, src[word_id, sent_id, 0]] = 1
+
+        src, _ = batch.src if isinstance(batch.src, tuple) \
+            else (batch.src, None)
+
+        _set_src_indicator(src)
+
+        padded_siamese_attn_0 = torch.zeros(
+            size=(siamese_attn_0.size()[0], max_input_seq_len, siamese_attn_0.size()[2]), device=siamese_attn_0.device,
+            dtype=siamese_attn_0.dtype)
+        padded_siamese_attn_0[:, :siamese_attn_0.size()[1], :] = siamese_attn_0
+        v1 = torch.diagonal(input=torch.bmm(padded_siamese_attn_0, self.src_indicator.transpose(1, 2)), dim1=-1, dim2=-2)
+
+        padded_siamese_attn_1 = torch.zeros(
+            size=(siamese_attn_1.size()[0], max_input_seq_len, siamese_attn_1.size()[2]), device=siamese_attn_1.device,
+            dtype=siamese_attn_1.dtype)
+        padded_siamese_attn_1[:, :siamese_attn_1.size()[1], :] = siamese_attn_1
+        v2 = torch.diagonal(input=torch.bmm(padded_siamese_attn_1, self.src_indicator.transpose(1, 2)), dim1=-1, dim2=-2)
+
+        vocab = batch.dataset.fields['src'].base_field.vocab
+        src_ex_vocab = batch.src_ex_vocab
+        v0 = torch.zeros(v1.size())
+        for batch_id in range(src.size()[1]):
+            for i, word_id in enumerate(src[:, batch_id, 0]):
+                word_str = vocab.itos[word_id]
+                if vocab.freqs[word_str] == 0:
+                    v0[batch_id, i] = 0
+                else:
+                    v0[batch_id, i] = src_ex_vocab[batch_id].freqs[word_str] / float(vocab.freqs[word_str])
+
+        return torch.sum(torch.abs(v0 - v1 + v2)[:, :batch.src[0].size()[0]])
+
     def _compute_loss(self, batch, output, target, copy_attn, align,
-                      std_attn=None, coverage_attn=None):
+                      std_attn=None, coverage_attn=None, siamese_attn_0=None, siamese_attn_1=None):
         """Compute the loss.
 
         The args must match :func:`self._make_shard_state()`.
@@ -257,5 +304,8 @@ class CopyGeneratorLossCompute(NMTLossCompute):
             loss = torch.div(loss, tgt_lens).sum()
         else:
             loss = loss.sum()
+
+        if siamese_attn_0 is not None and siamese_attn_1 is not None:
+            loss += self._compute_siamese_loss(batch, siamese_attn_0, siamese_attn_1)
 
         return loss, stats

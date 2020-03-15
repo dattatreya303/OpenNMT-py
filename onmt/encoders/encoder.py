@@ -1,4 +1,5 @@
 """Base class for encoders and generic multi encoders."""
+import torch
 
 import torch.nn as nn
 
@@ -56,3 +57,45 @@ class EncoderBase(nn.Module):
         """
 
         raise NotImplementedError
+
+
+class SiameseEncoder(EncoderBase):
+
+    def __init__(self, k, m, n, batch_size):
+        super(SiameseEncoder, self).__init__()
+        self.batch_size = batch_size
+        self.K = k
+        self.M = m
+        self.N = n
+        self.W1 = nn.Linear(self.M, self.K)
+        self.W2 = nn.Linear(self.K, self.N)
+        self.src_indicator = torch.Tensor(batch_size, self.N, 1)
+        self.doc_indicator = torch.Tensor(batch_size, self.M, 1)
+
+    def from_opt(cls, opt, embeddings=None):
+        pass
+
+    def forward(self, src, lengths=None, src_doc_index=None, other_src_doc_index=None, vocab=None):
+
+        # src_indicator = self._get_src_indicator(src)
+        # v1 = torch.bmm(self.W2(self.W1(self._get_doc_indicator(src_doc_index))), src_indicator)
+        # v2 = torch.bmm(self.W2(self.W1(self._get_doc_indicator(other_src_doc_index))), src_indicator)
+        # return v1 - v2
+
+        src_attn = self.W2(self.W1(self._get_doc_indicator(src_doc_index)))
+        if other_src_doc_index is None:
+            return src_attn, None
+        other_src_attn = self.W2(self.W1(self._get_doc_indicator(other_src_doc_index)))
+        return src_attn, other_src_attn
+
+    def _get_doc_indicator(self, doc_index):
+        return doc_index.view(doc_index.size()[1], doc_index.size()[0], doc_index.size()[2])
+
+    def _get_src_indicator(self, src):
+        self.src_indicator[:] = 0
+        for bid in range(src.size(1)):
+            for sid in range(src.size(0)):
+                self.src_indicator[bid, src[sid, bid, 0], 0] = 1
+        return self.src_indicator
+
+    # tensor([33, 43, 1410, 6, 1096, 5])

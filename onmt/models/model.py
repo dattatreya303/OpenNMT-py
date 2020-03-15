@@ -1,4 +1,5 @@
 """ Onmt NMT Model base class definition """
+
 import torch.nn as nn
 
 
@@ -54,3 +55,40 @@ class NMTModel(nn.Module):
     def update_dropout(self, dropout):
         self.encoder.update_dropout(dropout)
         self.decoder.update_dropout(dropout)
+
+
+class SiameseAidedNMTModel(nn.Module):
+
+    def __init__(self, encoder, decoder, device, siamese_encoder=None):
+        super(SiameseAidedNMTModel, self).__init__()
+
+        self.encoder = encoder
+        self.decoder = decoder
+
+        if siamese_encoder is not None:
+            self.siamese_encoder = siamese_encoder
+
+        self.device = device
+
+    def forward(self, src, tgt, lengths, bptt=False, with_align=False,
+                src_doc_index=None, other_src_doc_index=None, vocab=None, src_ex_vocab=None):
+
+        pad_size = self.siamese_encoder.M - src_doc_index.size()[2]
+        src_doc_index = nn.functional.pad(input=src_doc_index, pad=[0, pad_size, 0, 0, 0, 0], mode='constant', value=0)
+        pad_size = self.siamese_encoder.M - other_src_doc_index.size()[2]
+        other_src_doc_index = nn.functional.pad(input=other_src_doc_index, pad=[0, pad_size, 0, 0, 0, 0], mode='constant', value=0)
+        siamese_attn = self.siamese_encoder(src, src_doc_index=src_doc_index, other_src_doc_index=other_src_doc_index, vocab=vocab)
+
+        dec_in = tgt[:-1]  # exclude last target from inputs
+
+        enc_state, memory_bank, lengths = self.encoder(src, lengths)
+
+        if bptt is False:
+            self.decoder.init_state(src, memory_bank, enc_state)
+        dec_out, attns = self.decoder(dec_in, memory_bank,
+                                      memory_lengths=lengths,
+                                      with_align=with_align)
+
+        attns['siamese'] = siamese_attn
+
+        return dec_out, attns

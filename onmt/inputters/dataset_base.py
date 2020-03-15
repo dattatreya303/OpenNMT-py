@@ -1,5 +1,5 @@
 # coding: utf-8
-
+import random
 from itertools import chain, starmap
 from collections import Counter
 
@@ -21,7 +21,7 @@ def _join_dicts(*args):
     return dict(chain(*[d.items() for d in args]))
 
 
-def _dynamic_dict(example, src_field, tgt_field):
+def _dynamic_dict(example, src_field, tgt_field, doc_index, word_to_doc_dict, num_docs):
     """Create copy-vocab and numericalize with it.
 
     In-place adds ``"src_map"`` to ``example``. That is the copy-vocab
@@ -49,8 +49,12 @@ def _dynamic_dict(example, src_field, tgt_field):
     unk_idx = src_ex_vocab.stoi[unk]
     # Map source tokens to indices in the dynamic dict.
     src_map = torch.LongTensor([src_ex_vocab.stoi[w] for w in src])
+    src_index_map = torch.LongTensor([doc_index for _ in src])
+    other_src_index_map = torch.LongTensor([random.choice(list(set(range(num_docs))-set(word_to_doc_dict[w]))) for w in src])
     example["src_map"] = src_map
     example["src_ex_vocab"] = src_ex_vocab
+    example["src_index_map"] = src_index_map
+    example["other_src_index_map"] = other_src_index_map
 
     if "tgt" in example:
         tgt = tgt_field.tokenize(example["tgt"])
@@ -115,16 +119,29 @@ class Dataset(TorchtextDataset):
         read_iters = [r.read(dat[1], dat[0], dir_) for r, dat, dir_
                       in zip(readers, data, dirs)]
 
+        word_to_doc_dict = {}
+        num_docs = 0
+        for i, eg_dict in enumerate(starmap(_join_dicts, zip(*read_iters))):
+            num_docs += 1
+            src_word_list = fields['src'].base_field.tokenize(eg_dict['src'])
+            for w in src_word_list:
+                if w not in word_to_doc_dict:
+                    word_to_doc_dict[w] = []
+                word_to_doc_dict[w].append(i)
+
+        read_iters = [r.read(dat[1], dat[0], dir_) for r, dat, dir_
+                      in zip(readers, data, dirs)]
+
         # self.src_vocabs is used in collapse_copy_scores and Translator.py
         self.src_vocabs = []
         examples = []
-        for ex_dict in starmap(_join_dicts, zip(*read_iters)):
+        for i,ex_dict in enumerate(starmap(_join_dicts, zip(*read_iters))):
             if can_copy:
                 src_field = fields['src']
                 tgt_field = fields['tgt']
                 # this assumes src_field and tgt_field are both text
                 src_ex_vocab, ex_dict = _dynamic_dict(
-                    ex_dict, src_field.base_field, tgt_field.base_field)
+                    ex_dict, src_field.base_field, tgt_field.base_field, i, word_to_doc_dict, num_docs)
                 self.src_vocabs.append(src_ex_vocab)
             ex_fields = {k: [(k, v)] for k, v in fields.items() if
                          k in ex_dict}

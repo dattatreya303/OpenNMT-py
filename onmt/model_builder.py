@@ -9,7 +9,7 @@ from torch.nn.init import xavier_uniform_
 
 import onmt.inputters as inputters
 import onmt.modules
-from onmt.encoders import str2enc
+from onmt.encoders import str2enc, SiameseEncoder
 
 from onmt.decoders import str2dec
 
@@ -147,6 +147,7 @@ def build_base_model(model_opt, fields, gpu, checkpoint=None, gpu_id=None):
 
     # Build encoder.
     encoder = build_encoder(model_opt, src_emb)
+    siamese_encoder = SiameseEncoder(k=20, m=10000, n=len(src_field.base_field.vocab.itos), batch_size=model_opt.batch_size)
 
     # Build decoder.
     tgt_field = fields["tgt"]
@@ -169,7 +170,8 @@ def build_base_model(model_opt, fields, gpu, checkpoint=None, gpu_id=None):
         device = torch.device("cuda")
     elif not gpu:
         device = torch.device("cpu")
-    model = onmt.models.NMTModel(encoder, decoder)
+    # model = onmt.models.NMTModel(encoder, decoder)
+    model = onmt.models.SiameseAidedNMTModel(encoder, decoder, device, siamese_encoder)
 
     # Build Generator.
     if not model_opt.copy_attn:
