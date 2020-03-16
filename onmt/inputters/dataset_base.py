@@ -50,7 +50,7 @@ def _dynamic_dict(example, src_field, tgt_field, doc_index, word_to_doc_dict, nu
     # Map source tokens to indices in the dynamic dict.
     src_map = torch.LongTensor([src_ex_vocab.stoi[w] for w in src])
     src_index_map = torch.LongTensor([doc_index for _ in src])
-    other_src_index_map = torch.LongTensor([random.choice(list(set(range(num_docs))-set(word_to_doc_dict[w]))) for w in src])
+    other_src_index_map = torch.LongTensor([random.choice(list(set(range(num_docs))-set(word_to_doc_dict[w])) + [random.randrange(num_docs)]) for w in src])
     example["src_map"] = src_map
     example["src_ex_vocab"] = src_ex_vocab
     example["src_index_map"] = src_index_map
