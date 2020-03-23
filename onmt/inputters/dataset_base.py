@@ -50,7 +50,21 @@ def _dynamic_dict(example, src_field, tgt_field, doc_index, word_to_doc_dict, nu
     # Map source tokens to indices in the dynamic dict.
     src_map = torch.LongTensor([src_ex_vocab.stoi[w] for w in src])
     src_index_map = torch.LongTensor([doc_index for _ in src])
-    other_src_index_map = torch.LongTensor([random.choice(list(set(range(num_docs))-set(word_to_doc_dict[w])) + [random.randrange(num_docs)]) for w in src])
+    other_src_index_map = []
+    for w in src:
+        not_list = word_to_doc_dict[w]
+        if len(not_list)/float(num_docs) >= 0.67:
+            other_src_index_map.append(-1)
+            continue
+        j = random.randrange(num_docs)
+        num_tries = 1
+        while j in not_list:
+            if num_tries == 5:
+                j = -1
+                break
+            j = random.randrange(num_docs)
+        other_src_index_map.append(j)
+    other_src_index_map = torch.LongTensor(other_src_index_map)
     example["src_map"] = src_map
     example["src_ex_vocab"] = src_ex_vocab
     example["src_index_map"] = src_index_map
@@ -126,8 +140,10 @@ class Dataset(TorchtextDataset):
             src_word_list = fields['src'].base_field.tokenize(eg_dict['src'])
             for w in src_word_list:
                 if w not in word_to_doc_dict:
-                    word_to_doc_dict[w] = []
-                word_to_doc_dict[w].append(i)
+                    word_to_doc_dict[w] = set()
+                word_to_doc_dict[w].add(i)
+            # print(i)
+        num_docs_set = set(range(num_docs))
 
         read_iters = [r.read(dat[1], dat[0], dir_) for r, dat, dir_
                       in zip(readers, data, dirs)]
@@ -147,6 +163,7 @@ class Dataset(TorchtextDataset):
                          k in ex_dict}
             ex = Example.fromdict(ex_dict, ex_fields)
             examples.append(ex)
+            print(i)
 
         # fields needs to have only keys that examples have as attrs
         fields = []

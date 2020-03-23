@@ -82,6 +82,8 @@ class SiameseEncoder(EncoderBase):
         # v2 = torch.bmm(self.W2(self.W1(self._get_doc_indicator(other_src_doc_index))), src_indicator)
         # return v1 - v2
 
+        if other_src_doc_index == -1:
+            other_src_doc_index = src_doc_index
         src_attn = self.W2(self.W1(self._get_doc_indicator(src_doc_index)))
         if other_src_doc_index is None:
             return src_attn, None
