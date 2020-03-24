@@ -210,7 +210,7 @@ class CopyGeneratorLossCompute(NMTLossCompute):
         max_input_seq_len = 400
 
         if self.src_indicator is None:
-            self.src_indicator = torch.Tensor(batch.batch_size, max_input_seq_len, self.criterion.vocab_size)
+            self.src_indicator = torch.cuda.Tensor(batch.batch_size, max_input_seq_len, self.criterion.vocab_size)
 
         def _set_src_indicator(src):
             self.src_indicator[:] = 0
@@ -306,6 +306,7 @@ class CopyGeneratorLossCompute(NMTLossCompute):
             loss = loss.sum()
 
         if siamese_attn_0 is not None and siamese_attn_1 is not None:
-            loss += self._compute_siamese_loss(batch, siamese_attn_0, siamese_attn_1)
+            siamese_loss = self._compute_siamese_loss(batch, siamese_attn_0, siamese_attn_1)
+            loss += siamese_loss
 
         return loss, stats

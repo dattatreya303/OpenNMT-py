@@ -69,8 +69,8 @@ class SiameseEncoder(EncoderBase):
         self.N = n
         self.W1 = nn.Linear(self.M, self.K)
         self.W2 = nn.Linear(self.K, self.N)
-        self.src_indicator = torch.Tensor(batch_size, self.N, 1)
-        self.doc_indicator = torch.Tensor(batch_size, self.M, 1)
+        self.src_indicator = torch.cuda.Tensor(batch_size, self.N, 1)
+        self.doc_indicator = torch.cuda.Tensor(batch_size, self.M, 1)
 
     def from_opt(cls, opt, embeddings=None):
         pass
