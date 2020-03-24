@@ -256,6 +256,7 @@ class CopyGeneratorLossCompute(NMTLossCompute):
                     v0[batch_id, i] = 0
                 else:
                     v0[batch_id, i] = src_ex_vocab[batch_id].freqs[word_str] / float(vocab.freqs[word_str])
+        v0 = v0.to(siamese_attn_1.device)
 
         return torch.abs(v0 - v1 + v2).sum()
 
