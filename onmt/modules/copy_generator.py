@@ -4,6 +4,8 @@ import torch.nn as nn
 from onmt.utils.misc import aeq
 from onmt.utils.loss import NMTLossCompute
 
+import numpy as np
+
 
 def collapse_copy_scores(scores, batch, tgt_vocab, src_vocabs=None,
                          batch_dim=1, batch_offset=None):
@@ -209,31 +211,40 @@ class CopyGeneratorLossCompute(NMTLossCompute):
 
         max_input_seq_len = 400
 
-        if self.src_indicator is None:
-            self.src_indicator = torch.cuda.Tensor(batch.batch_size, max_input_seq_len, self.criterion.vocab_size)
+        # if self.src_indicator is None:
+        #     use_cuda = torch.cuda.is_available()
+        #     self.src_indicator = torch.cuda.LongTensor(batch.batch_size, max_input_seq_len, self.criterion.vocab_size) if use_cuda else torch.LongTensor
 
         def _set_src_indicator(src):
-            self.src_indicator[:] = 0
             for sent_id in range(src.size(1)):
+                self.src_indicator[sent_id].fill_(0)
                 for word_id in range(src.size(0)):
                     self.src_indicator[sent_id, word_id, src[word_id, sent_id, 0]] = 1
+
+        def _get_src_indicator(src):
+            src_indicator = np.zeros((batch.batch_size, max_input_seq_len, self.criterion.vocab_size))
+            for sent_id in range(src.size(1)):
+                for word_id in range(src.size(0)):
+                    src_indicator[sent_id, word_id, src[word_id, sent_id, 0]] = 1
+            return torch.from_numpy(src_indicator)
 
         src, _ = batch.src if isinstance(batch.src, tuple) \
             else (batch.src, None)
 
-        _set_src_indicator(src)
+        # _set_src_indicator(src)
+        src_indicator = _get_src_indicator(src).to(siamese_attn_1.device)
 
         padded_siamese_attn_0 = torch.zeros(
             size=(siamese_attn_0.size()[0], max_input_seq_len, siamese_attn_0.size()[2]), device=siamese_attn_0.device,
             dtype=siamese_attn_0.dtype)
         padded_siamese_attn_0[:, :siamese_attn_0.size()[1], :] = siamese_attn_0
-        v1 = torch.diagonal(input=torch.bmm(padded_siamese_attn_0, self.src_indicator.transpose(1, 2)), dim1=-1, dim2=-2)
+        v1 = torch.diagonal(input=torch.bmm(padded_siamese_attn_0, src_indicator.transpose(1, 2).float()), dim1=-1, dim2=-2).float()
 
         padded_siamese_attn_1 = torch.zeros(
             size=(siamese_attn_1.size()[0], max_input_seq_len, siamese_attn_1.size()[2]), device=siamese_attn_1.device,
             dtype=siamese_attn_1.dtype)
         padded_siamese_attn_1[:, :siamese_attn_1.size()[1], :] = siamese_attn_1
-        v2 = torch.diagonal(input=torch.bmm(padded_siamese_attn_1, self.src_indicator.transpose(1, 2)), dim1=-1, dim2=-2)
+        v2 = torch.diagonal(input=torch.bmm(padded_siamese_attn_1, src_indicator.transpose(1, 2).float()), dim1=-1, dim2=-2)
 
         vocab = batch.dataset.fields['src'].base_field.vocab
         src_ex_vocab = batch.src_ex_vocab
