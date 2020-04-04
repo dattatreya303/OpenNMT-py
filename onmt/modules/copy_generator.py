@@ -236,13 +236,13 @@ class CopyGeneratorLossCompute(NMTLossCompute):
 
         padded_siamese_attn_0 = torch.zeros(
             size=(siamese_attn_0.size()[0], max_input_seq_len, siamese_attn_0.size()[2]), device=siamese_attn_0.device,
-            dtype=siamese_attn_0.dtype, requires_grad=True)
+            dtype=siamese_attn_0.dtype, requires_grad=True).clone()
         padded_siamese_attn_0[:, :siamese_attn_0.size()[1], :] = siamese_attn_0
         v1 = torch.diagonal(input=torch.bmm(padded_siamese_attn_0, src_indicator.transpose(1, 2).float()), dim1=-1, dim2=-2).float()
 
         padded_siamese_attn_1 = torch.zeros(
             size=(siamese_attn_1.size()[0], max_input_seq_len, siamese_attn_1.size()[2]), device=siamese_attn_1.device,
-            dtype=siamese_attn_1.dtype, requires_grad=True)
+            dtype=siamese_attn_1.dtype, requires_grad=True).clone()
         padded_siamese_attn_1[:, :siamese_attn_1.size()[1], :] = siamese_attn_1
         v2 = torch.diagonal(input=torch.bmm(padded_siamese_attn_1, src_indicator.transpose(1, 2).float()), dim1=-1, dim2=-2)
 
