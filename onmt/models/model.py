@@ -75,8 +75,9 @@ class SiameseAidedNMTModel(nn.Module):
 
         pad_size = self.siamese_encoder.M - src_doc_index.size()[2]
         src_doc_index = nn.functional.pad(input=src_doc_index, pad=[0, pad_size, 0, 0, 0, 0], mode='constant', value=0)
-        pad_size = self.siamese_encoder.M - other_src_doc_index.size()[2]
-        other_src_doc_index = nn.functional.pad(input=other_src_doc_index, pad=[0, pad_size, 0, 0, 0, 0], mode='constant', value=0)
+        if other_src_doc_index is not None:
+            pad_size = self.siamese_encoder.M - other_src_doc_index.size()[2]
+            other_src_doc_index = nn.functional.pad(input=other_src_doc_index, pad=[0, pad_size, 0, 0, 0, 0], mode='constant', value=0)
         siamese_attn = self.siamese_encoder(src, src_doc_index=src_doc_index, other_src_doc_index=other_src_doc_index, vocab=vocab)
 
         dec_in = tgt[:-1]  # exclude last target from inputs

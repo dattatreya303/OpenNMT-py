@@ -103,5 +103,3 @@ class SiameseEncoder(EncoderBase):
             for sid in range(src.size(0)):
                 self.src_indicator[bid, src[sid, bid, 0], 0] = 1
         return self.src_indicator
-
-    # tensor([33, 43, 1410, 6, 1096, 5])
