@@ -73,8 +73,9 @@ class SiameseAidedNMTModel(nn.Module):
     def forward(self, src, tgt, lengths, bptt=False, with_align=False,
                 src_doc_index=None, other_src_doc_index=None, vocab=None, src_ex_vocab=None):
 
-        pad_size = self.siamese_encoder.M - src_doc_index.size()[2]
-        src_doc_index = nn.functional.pad(input=src_doc_index, pad=[0, pad_size, 0, 0, 0, 0], mode='constant', value=0)
+        if src_doc_index is not None:
+            pad_size = self.siamese_encoder.M - src_doc_index.size()[2]
+            src_doc_index = nn.functional.pad(input=src_doc_index, pad=[0, pad_size, 0, 0, 0, 0], mode='constant', value=0)
         if other_src_doc_index is not None:
             pad_size = self.siamese_encoder.M - other_src_doc_index.size()[2]
             other_src_doc_index = nn.functional.pad(input=other_src_doc_index, pad=[0, pad_size, 0, 0, 0, 0], mode='constant', value=0)

@@ -88,10 +88,14 @@ class SiameseEncoder(EncoderBase):
         #     for word_idx in range(other_src_doc_index.size(0)):
         #         if other_src_doc_index[word_idx, sent_idx].max() == 0:
         #             other_src_doc_index[word_idx, sent_idx] == src_doc_index[word_idx, sent_idx]
-        src_attn = self.W2(self.W1(self._get_doc_indicator(src_doc_index)))
+        src_attn = None
+        if src_doc_index is not None:
+            src_attn = self.W2(self.W1(self._get_doc_indicator(src_doc_index)))
         if other_src_doc_index is None:
             return src_attn, None
-        other_src_attn = self.W2(self.W1(self._get_doc_indicator(other_src_doc_index)))
+        other_src_attn = None
+        if other_src_doc_index is not None:
+            other_src_attn = self.W2(self.W1(self._get_doc_indicator(other_src_doc_index)))
         return src_attn, other_src_attn
 
     def _get_doc_indicator(self, doc_index):
