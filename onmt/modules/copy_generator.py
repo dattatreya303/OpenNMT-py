@@ -319,7 +319,7 @@ class CopyGeneratorLossCompute(NMTLossCompute):
 
         if siamese_attn_0 is not None and siamese_attn_1 is not None:
             siamese_loss = self._compute_siamese_loss(batch, siamese_attn_0, siamese_attn_1)
-            print(loss.size(), siamese_loss.size())
+            # print(loss.size(), siamese_loss.size())
             loss += siamese_loss
 
         return loss, stats
