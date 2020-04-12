@@ -147,7 +147,7 @@ def build_base_model(model_opt, fields, gpu, checkpoint=None, gpu_id=None):
 
     # Build encoder.
     encoder = build_encoder(model_opt, src_emb)
-    siamese_encoder = SiameseEncoder(k=20, m=10000, n=len(src_field.base_field.vocab.itos), batch_size=model_opt.batch_size)
+    siamese_encoder = SiameseEncoder(k=20, m=287227, n=len(src_field.base_field.vocab.itos), batch_size=model_opt.batch_size)
 
     # Build decoder.
     tgt_field = fields["tgt"]
