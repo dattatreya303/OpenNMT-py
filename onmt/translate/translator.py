@@ -574,7 +574,8 @@ class Translator(object):
             batch_offset=None):
 
         siamese_weight = self.model.siamese_encoder.W2.weight # 50004 x 20
-        cluster_attn = siamese_weight[batch.src[0].squeeze()]
+        siamese_weight_padded = nn.functional.pad(input=siamese_weight, pad=[0, 0, 0, 1000], mode='constant', value=0)
+        cluster_attn = siamese_weight_padded[batch.src[0].squeeze()]
         sent_cluster_distribution = cluster_attn.mean(dim=0) # 20
         sent_cluster_distances_linear = siamese_weight - sent_cluster_distribution
         sent_cluster_distances_linear_squared = torch.mul(sent_cluster_distances_linear, sent_cluster_distances_linear)
