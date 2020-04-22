@@ -163,7 +163,7 @@ class Dataset(TorchtextDataset):
                          k in ex_dict}
             ex = Example.fromdict(ex_dict, ex_fields)
             examples.append(ex)
-            print(i)
+            # print(i)
 
         # fields needs to have only keys that examples have as attrs
         fields = []

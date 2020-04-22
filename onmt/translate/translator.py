@@ -8,6 +8,7 @@ import numpy as np
 from itertools import count, zip_longest
 
 import torch
+import torch.nn as nn
 
 import onmt.model_builder
 import onmt.inputters as inputters
@@ -571,6 +572,14 @@ class Translator(object):
             src_map=None,
             step=None,
             batch_offset=None):
+
+        siamese_weight = self.model.siamese_encoder.W2.weight # 50004 x 20
+        cluster_attn = siamese_weight[batch.src[0].squeeze()]
+        sent_cluster_distribution = cluster_attn.mean(dim=0) # 20
+        sent_cluster_distances_linear = siamese_weight - sent_cluster_distribution
+        sent_cluster_distances_linear_squared = torch.mul(sent_cluster_distances_linear, sent_cluster_distances_linear)
+        sent_cluster_distances_euclidean = sent_cluster_distances_linear_squared.sum(dim=1)
+
         if self.copy_attn:
             # Turn any copied words into UNKs.
             decoder_in = decoder_in.masked_fill(
@@ -600,6 +609,11 @@ class Translator(object):
                                           attn.view(-1, attn.size(2)),
                                           src_map)
             # here we have scores [tgt_lenxbatch, vocab] or [beamxbatch, vocab]
+
+            pad_size = scores.shape[1] - sent_cluster_distances_euclidean.shape[0]
+            sent_cluster_distances_euclidean_padded = nn.functional.pad(input=sent_cluster_distances_euclidean, pad=[0, pad_size], mode='constant', value=0)
+            scores -= sent_cluster_distances_euclidean_padded
+
             if batch_offset is None:
                 scores = scores.view(-1, batch.batch_size, scores.size(-1))
                 scores = scores.transpose(0, 1).contiguous()
