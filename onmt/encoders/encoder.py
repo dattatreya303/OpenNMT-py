@@ -71,8 +71,8 @@ class SiameseEncoder(EncoderBase):
         self.W2 = nn.Linear(self.K, self.N)
 
         use_cuda = torch.cuda.is_available()
-        self.src_indicator = torch.cuda.LongTensor(batch_size, self.N, 1) if use_cuda else torch.LongTensor
-        self.doc_indicator = torch.cuda.LongTensor(batch_size, self.M, 1) if use_cuda else torch.LongTensor
+        self.src_indicator = torch.cuda.LongTensor(batch_size, self.N, 1) if use_cuda else torch.LongTensor(batch_size, self.N, 1)
+        self.doc_indicator = torch.cuda.LongTensor(batch_size, self.M, 1) if use_cuda else torch.LongTensor(batch_size, self.M, 1)
 
     def from_opt(cls, opt, embeddings=None):
         pass
